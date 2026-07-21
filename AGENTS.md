@@ -1,10 +1,10 @@
-# AGENTS.md — tds-auth
+# AGENTS.md — tds-auth-frontend
 
 _Read before non-trivial changes. Repo-wide conventions apply — see the root `CLAUDE.md`._
 
 ## What this is
 
-`tds-auth` is the **central login site** for Tracht Digital Solutions, served at
+`tds-auth-frontend` is the **central login site** for Tracht Digital Solutions, served at
 `auth.tracht-digital.de`. It is a standalone static Astro site (`output: "static"`,
 no SSR, no Node on prod) — a **private, noindex** surface (unlike the indexable
 landingpage/blog/tools). It hosts the single login + password-change UI for *all*
@@ -45,7 +45,7 @@ in one place.
 - **noindex posture**: `public/robots.txt` = `Disallow: /`, the layout hard-codes
   `<meta name="robots" content="noindex,nofollow">`, and there is **no** sitemap
   integration. Don't add one.
-- Design tokens/components come from `tds-shared` (`base.css` + `app.css` + `ThemeToggle`/
+- Design tokens/components come from `tds-shared-pkg` (`base.css` + `app.css` + `ThemeToggle`/
   `CookieNotice`/`Spinner`). Don't re-inline them.
 
 ## Commands

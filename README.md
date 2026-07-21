@@ -1,4 +1,4 @@
-# tds-auth
+# tds-auth-frontend
 
 Central login for **Tracht Digital Solutions** — `auth.tracht-digital.de`.
 
@@ -17,7 +17,7 @@ logs them in and sends them back (the `next` value is validated against a
 `@tracht-digital-solutions/*` packages live on **GitHub Packages**, so `npm install` needs
 a classic PAT with `read:packages` (SSO-authorized for the org), provided via `~/.npmrc` or
 the `NPM_TOKEN` env var the repo `.npmrc` references. `GITHUB_TOKEN` can't read
-`tds-shared` cross-repo.
+`tds-shared-pkg` cross-repo.
 
 ```bash
 npm install --no-package-lock
@@ -41,7 +41,7 @@ src/
   lib/auth.ts                    # tds-auth-api client (login / me / password)
   lib/redirect.ts                # next allow-list + role-based default  (security-critical)
   lib/redirect.test.ts
-  styles/global.css              # tds-shared base+app + local login chrome
+  styles/global.css              # tds-shared-pkg base+app + local login chrome
 public/robots.txt                # Disallow: /
 ```
 
