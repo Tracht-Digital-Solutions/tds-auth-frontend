@@ -1,0 +1,106 @@
+name: Build (reusable)
+
+# Single source of truth for the tds-auth (central login) pipeline. Called by
+# ci.yml (PR gate, no publish), dev.yml (demo build → dev branch) and
+# release.yml (production build → release branch + deploy ping). Behaviour is
+# selected entirely through the inputs below so the build body lives in exactly
+# one place. See AGENTS.md for the --no-package-lock / NPM_TOKEN rationale.
+
+on:
+  workflow_call:
+    inputs:
+      demo_mode:
+        description: Value for PUBLIC_DEMO_MODE on publishing builds (dev=true, release=false).
+        type: boolean
+        default: false
+      publish_branch:
+        description: Orphan branch to force-publish dist/ to (dev | release). Empty = no publish.
+        type: string
+        default: ''
+      deploy:
+        description: Ping the deploy webhook after publishing (release only).
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No permissions: block here — a reusable workflow cannot request more than
+    # the caller's token holds, and the repo default is read-only. Each caller
+    # grants least-privilege permissions instead.
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@tracht-digital-solutions'
+
+      - name: Install
+        # The Windows-generated lockfile is win32-only, so --no-package-lock is
+        # required for the Linux runner to resolve the right native binaries
+        # (see AGENTS.md / npm/cli#4828).
+        run: npm install --no-package-lock
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Test
+        run: npm run test:run
+
+      - name: Configure demo mode
+        if: ${{ inputs.publish_branch != '' }}
+        run: echo "PUBLIC_DEMO_MODE=${{ inputs.demo_mode }}" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: npm run build
+
+      - name: Stamp build
+        if: ${{ inputs.publish_branch != '' }}
+        run: |
+          mkdir -p dist
+          {
+            echo "channel=${{ inputs.publish_branch }}"
+            echo "commit=${GITHUB_SHA}"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+          } > dist/.build-info
+
+      - name: Publish dist to ${{ inputs.publish_branch }} branch
+        if: ${{ inputs.publish_branch != '' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.NPM_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: ${{ inputs.publish_branch }}
+          commit_message: '${{ inputs.publish_branch }} ${{ github.sha }}'
+          force_orphan: true
+
+      - name: Trigger deploy webhook
+        if: ${{ inputs.deploy }}
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "DEPLOY_WEBHOOK_URL not set - skipping deploy ping."
+            exit 0
+          fi
+          # release/ is already published by now, so a failed ping must NOT red
+          # the run. Plesk's git web-hook only answers POST (a bare GET 404s); -L
+          # follows any panel redirect and re-POSTs.
+          echo "POSTing deploy webhook to $(printf '%s' "$DEPLOY_WEBHOOK_URL" | cut -d/ -f1-3) ..."
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST -L --post301 --post302 --post303 \
+            --retry 3 --retry-delay 5 --max-time 30 \
+            "$DEPLOY_WEBHOOK_URL" || echo "000")
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "Deploy webhook pinged (HTTP $code)."
+          else
+            echo "::warning title=Deploy webhook failed::Webhook returned HTTP $code. The release branch is published but the host was not notified - check DEPLOY_WEBHOOK_URL."
+          fi

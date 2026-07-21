@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* Brand design system + shared application chrome. Tokens, dark theme, base
+   resets, type primitives, buttons/fields, status pills, spinner and the brand
+   header all live in tds-shared so every TDS frontend stays consistent. The
+   @fontsource imports live in Layout.astro (NOT here): @tailwindcss/postcss
+   inlines CSS @imports without rebasing the packages' relative
+   url(./files/*.woff2) refs, so Vite would never emit the woff2 and every font
+   404s. */
+@import "@tracht-digital-solutions/tds-shared/styles/base.css";
+@import "@tracht-digital-solutions/tds-shared/styles/app.css";
+
+:root {
+  --font-display: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Geist Variable", "Geist", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---- Central-login chrome (site-local) ---- */
+.auth-page {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--color-paper);
+}
+.auth-toolbar {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+.auth-card {
+  width: 100%;
+  max-width: 24rem;
+  padding: 1.75rem 1.75rem 2rem;
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+  box-shadow: 0 12px 40px -24px rgba(0, 0, 0, 0.35);
+}
+.auth-card__brand {
+  position: static;
+  background: none;
+  backdrop-filter: none;
+  border: 0;
+  padding: 0;
+  margin-bottom: 1.25rem;
+}
+.auth-card h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  color: var(--color-ink);
+  margin: 0 0 0.35rem;
+}
+.auth-card__lede {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+  margin: 0 0 1.25rem;
+  text-wrap: pretty;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.auth-form .btn-primary {
+  margin-top: 0.25rem;
+  justify-content: center;
+}
+.auth-hint {
+  margin-top: 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  text-align: center;
+}
+.auth-error {
+  margin: 0;
+}

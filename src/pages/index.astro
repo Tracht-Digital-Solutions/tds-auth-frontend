@@ -1,0 +1,13 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import LoginForm from "~/components/LoginForm.tsx";
+---
+
+<Layout title="Anmelden — Tracht Digital Solutions">
+  <h1>Anmelden</h1>
+  <p class="auth-card__lede">
+    Melden Sie sich mit Ihrer E-Mail-Adresse an. Eine Anmeldung gilt für alle
+    Bereiche (Panel, Portal und Tools).
+  </p>
+  <LoginForm client:load />
+</Layout>

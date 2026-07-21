@@ -1,0 +1,27 @@
+name: Dev build → dev branch
+
+# On every push to main, build with the Staging/Demo config and force-publish
+# dist/ to the orphan `dev` branch. NOT deployed — this is the continuously-
+# built developer artifact + push-to-main build gate. Production goes out via
+# release.yml (manual button). Pipeline body in _build.yml.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      demo_mode: true
+      publish_branch: dev
+    secrets: inherit

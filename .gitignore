@@ -1,0 +1,26 @@
+# build output
+dist/
+.output/
+
+# astro
+.astro/
+
+# deps
+node_modules/
+
+# logs / os / editor
+*.log
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.swp
+*~
+
+# Windows-generated npm lockfile is win32-only; CI uses npm install --no-package-lock
+package-lock.json
+
+# env
+.env
+.env.production

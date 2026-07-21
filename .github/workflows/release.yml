@@ -1,0 +1,26 @@
+name: Release → release branch (manual)
+
+# Production build, ONLY on the manual Actions button. Builds with the real
+# production config, force-publishes dist/ to the orphan `release` branch, then
+# pings the deploy webhook so the host pulls `release` and goes live. Pipeline
+# body in _build.yml.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      demo_mode: false
+      publish_branch: release
+      deploy: true
+    secrets: inherit
