@@ -3,11 +3,11 @@
 Central login for **Tracht Digital Solutions** — `auth.tracht-digital.de`.
 
 A standalone static Astro site that hosts the single sign-on **login** and
-**password-change** UI for every product (admin panel, customer portal, tools). It is a
+**password-change** UI for every product (admin frontend, customer portal, tools). It is a
 private, `noindex` surface. Identity is handled by `tds-auth-api`; this repo is UI only.
 
 Because `tds-auth-api` sets the session cookie with `Domain=.tracht-digital.de`, one login
-here is valid across all `*.tracht-digital.de` panels — no token hand-off. The panels
+here is valid across all `*.tracht-digital.de` frontends — no token hand-off. The frontends
 redirect logged-out visitors to `auth.tracht-digital.de/?next=<return URL>`; this site
 logs them in and sends them back (the `next` value is validated against a
 `*.tracht-digital.de` allow-list to prevent open redirects).

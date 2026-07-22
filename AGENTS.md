@@ -8,7 +8,7 @@ _Read before non-trivial changes. Repo-wide conventions apply — see the root `
 `auth.tracht-digital.de`. It is a standalone static Astro site (`output: "static"`,
 no SSR, no Node on prod) — a **private, noindex** surface (unlike the indexable
 landingpage/blog/tools). It hosts the single login + password-change UI for *all*
-products; the admin panel, customer portal and tools site bounce logged-out visitors
+products; the admin frontend, customer portal and tools site bounce logged-out visitors
 here and get the user back via `?next=`.
 
 It is **UI only** — the identity backend is `tds-auth-api` (a pure JSON API). There is
@@ -23,7 +23,7 @@ in one place.
   passed between sites. JS never reads the cookie; identity comes from `GET /me`.
 - **On-mount SSO** (`LoginForm.tsx`): if a session already exists, the form never renders —
   the user is forwarded straight to the target.
-- **`?next=` + open-redirect guard** (`src/lib/redirect.ts`): the panels send an absolute
+- **`?next=` + open-redirect guard** (`src/lib/redirect.ts`): the frontends send an absolute
   return URL. Because it flows into `location.replace`, it is validated against an
   allow-list — `https://` on `tracht-digital.de` or any subdomain (plus `localhost` for
   dev). Anything else falls back to a role-based default (`isAdmin` → `management.`, else
@@ -59,7 +59,7 @@ npm run build                   # → dist/ (the deployed artifact)
 ```
 
 Set `PUBLIC_AUTH_API_URL` for local dev (default is the prod gateway). To exercise the
-full flow locally, run a panel with `PUBLIC_LOGIN_URL` pointed at this dev server.
+full flow locally, run a frontend with `PUBLIC_LOGIN_URL` pointed at this dev server.
 
 ## Env
 
