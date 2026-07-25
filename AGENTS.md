@@ -55,13 +55,57 @@ in one place.
 - Design tokens/components come from `tds-shared-pkg` (`base.css` + `app.css` + `ThemeToggle`/
   `CookieNotice`/`Spinner`). Don't re-inline them.
 
+## Tests
+
+`vitest` covers everything framework-agnostic; Astro's own rendering stays on
+`npm run type-check`. Four groups, all run by `npm run test:run`:
+
+- **`src/lib/redirect.test.ts`** — the `?next=` allow-list. **Security-critical, keep it
+  green.** Beyond the happy paths it pins the bypass shapes: userinfo (`https://app.tracht-
+  digital.de@evil.example`), protocol-relative (`//evil.example`), look-alike hosts
+  (`tracht-digital.de.evil.example`), non-http schemes, and `http` on a production host.
+- **`src/lib/auth.test.ts`** — the `tds-auth-api` client with `fetch` stubbed. Pins
+  `credentials: "include"` on every call (the shared cookie IS the session — dropping it
+  silently breaks SSO for every product), the `{old, new}` password body field names, and
+  that an unparseable 200 body still counts as a successful login.
+- **`src/components/*.test.tsx`** — both islands in jsdom via Testing Library, with
+  `~/lib/auth` mocked at the module boundary. On-mount SSO (an existing session must
+  forward *without* rendering the form), the `mustChangePassword` branch from both sources,
+  `?next=` propagation into `/passwort`, the post-login `/me` re-confirmation, and every
+  status→message mapping.
+- **`tests/static-posture.test.ts`** — the AGENTS.md traps that fail *silently* (build stays
+  green, production quietly breaks): noindex meta + `Disallow: /` + no sitemap, Tailwind via
+  `@tailwindcss/postcss`, Fontsource as JS imports, the `tdsViteBuild` spread. It reads the
+  source files, so negative assertions run against comment-stripped config — the configs
+  *document* these traps in prose and a naive match would fire on the warning text.
+
+Two testing gotchas worth knowing before you extend them:
+
+- **jsdom's `location.replace` cannot be spied on** (`Location` is [Unforgeable]), but
+  `window.location` itself is a configurable accessor. `src/test-support/location.ts` swaps
+  the whole object for a stub with a controllable `search`/`origin` and a `vi.fn()` replace.
+- **Auto-cleanup is off** (`globals: false`), so each island suite calls Testing Library's
+  `cleanup()` itself in `afterEach`. `userEvent.setup({ delay: null })` — the default
+  simulates human typing speed and costs ~700 ms per test.
+
+**`npm run test:docker`** (`Dockerfile.test` + `scripts/docker-test.mjs`) reruns
+type-check + tests + build inside `node:22-bookworm-slim`, the runner's image. It exists
+because the repo installs with `--no-package-lock` (the committed lockfile is
+Windows-generated and win32-only), so a dev box and CI can resolve *different* native
+binaries for rolldown/lightningcss/sharp — a green local run does not prove the Linux
+build is green. The Packages PAT is read from `$NPM_TOKEN` or `~/.npmrc` and passed as a
+**BuildKit secret**; never move it to an `ARG`/`ENV`, which would persist in the image
+history. `.dockerignore` must keep the host `node_modules` out of the context — otherwise
+it shadows the Linux install and the whole point is lost.
+
 ## Commands
 
 ```bash
 npm install --no-package-lock   # needs a GitHub PAT with read:packages (NPM_TOKEN / ~/.npmrc)
 npm run dev                     # astro dev
 npm run type-check              # astro check — 0 errors is the gate
-npm run test:run                # vitest (redirect allow-list guard)
+npm run test:run                # vitest — lib + both islands + posture guards
+npm run test:docker             # the same gate on Linux/Node 22 (needs Docker + the PAT)
 npm run build                   # → dist/ (the deployed artifact)
 ```
 

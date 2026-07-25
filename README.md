@@ -24,9 +24,31 @@ npm install --no-package-lock
 cp .env.example .env       # point PUBLIC_AUTH_API_URL at your auth API (default: prod gateway)
 npm run dev                # astro dev
 npm run type-check         # astro check (0-error gate)
-npm run test:run           # vitest — the redirect allow-list guard
+npm run test:run           # vitest — lib + both islands + posture guards
+npm run test:docker        # the whole gate again on Linux/Node 22 (see below)
 npm run build              # → dist/
 ```
+
+## Tests
+
+`npm run test:run` covers everything that isn't Astro's own rendering:
+
+| Suite | What it pins |
+|---|---|
+| `src/lib/redirect.test.ts` | the `?next=` allow-list — **security-critical** (userinfo `@`, protocol-relative, look-alike hosts, non-http schemes) |
+| `src/lib/auth.test.ts` | the `tds-auth-api` client with `fetch` stubbed: `credentials: "include"` on every call, status pass-through, unparseable bodies |
+| `src/components/*.test.tsx` | both islands in jsdom — on-mount SSO, the forced-password-change branch, `?next=` propagation, every error message, the in-flight/disabled states |
+| `tests/static-posture.test.ts` | the traps that fail *silently*: noindex + no sitemap, Tailwind via PostCSS (not the Vite plugin), Fontsource as JS imports, the `tdsViteBuild` spread |
+
+Astro rendering itself stays on `npm run type-check`.
+
+**`npm run test:docker`** reruns type-check + tests + build inside the same
+`node:22-bookworm-slim` image the GitHub runner uses. Worth it because the repo installs
+with `--no-package-lock` (the committed lockfile is Windows-generated), so a dev box and
+the runner can resolve *different* native binaries for rolldown/lightningcss/sharp — a
+green Windows run is not proof the Linux build is green. It needs Docker running and the
+same Packages token (`$NPM_TOKEN`, or the `//npm.pkg.github.com/:_authToken=` line in
+`~/.npmrc`); the token is passed as a BuildKit secret and never lands in the image.
 
 ## Structure
 
@@ -37,11 +59,19 @@ src/
   pages/passwort.astro          # password change (+ PasswordChangeForm island)
   pages/404.astro
   components/LoginForm.tsx       # login + on-mount SSO + forced-change branch
+  components/LoginForm.test.tsx
   components/PasswordChangeForm.tsx
+  components/PasswordChangeForm.test.tsx
   lib/auth.ts                    # tds-auth-api client (login / me / password)
+  lib/auth.test.ts
   lib/redirect.ts                # next allow-list + role-based default  (security-critical)
   lib/redirect.test.ts
+  lib/site.ts / site.test.ts
+  test-support/location.ts       # controllable window.location for the island tests
   styles/global.css              # tds-shared-pkg base+app + local login chrome
+tests/static-posture.test.ts     # noindex / Tailwind / Fontsource / cssTarget guards
+Dockerfile.test                  # the CI gate on Linux/Node 22  (npm run test:docker)
+scripts/docker-test.mjs
 public/robots.txt                # Disallow: /
 ```
 

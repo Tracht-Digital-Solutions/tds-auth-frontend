@@ -1,0 +1,12 @@
+# Keep the build context small and, more importantly, keep the HOST's
+# node_modules out of the image — it holds win32-only native binaries that
+# would shadow the Linux ones installed inside the container.
+node_modules
+dist
+.astro
+.git
+.claude
+.env
+.env.*
+!.env.example
+npm-debug.log*
