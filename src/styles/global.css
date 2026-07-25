@@ -23,20 +23,113 @@
   place-items: center;
   padding: 1.5rem;
   background: var(--color-paper);
+  overflow: hidden; /* contain the drifting aurora orbs (no scrollbars) */
 }
+
+/* Animated brand aurora — three soft radial-gradient orbs drifting behind the
+   card, tinted with the flipping brand tokens so it reads right in light AND
+   dark. Decorative only; stilled under prefers-reduced-motion below. */
+.auth-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.auth-aurora__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(24px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.auth-aurora__orb--1 {
+  width: min(64vmin, 480px);
+  aspect-ratio: 1;
+  top: -14vmin;
+  left: -10vmin;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-accent) 42%, transparent),
+    transparent 68%
+  );
+  animation: auth-orb-a 20s ease-in-out infinite;
+}
+.auth-aurora__orb--2 {
+  width: min(56vmin, 420px);
+  aspect-ratio: 1;
+  bottom: -16vmin;
+  right: -8vmin;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-surface-navy) 40%, transparent),
+    transparent 68%
+  );
+  animation: auth-orb-b 26s ease-in-out infinite;
+}
+.auth-aurora__orb--3 {
+  width: min(44vmin, 340px);
+  aspect-ratio: 1;
+  top: 42%;
+  left: 52%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-primary) 26%, transparent),
+    transparent 70%
+  );
+  animation: auth-orb-c 30s ease-in-out infinite;
+}
+[data-theme="dark"] .auth-aurora__orb {
+  opacity: 0.6;
+}
+@keyframes auth-orb-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6vmin, 5vmin, 0) scale(1.14); }
+}
+@keyframes auth-orb-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-7vmin, -4vmin, 0) scale(1.1); }
+}
+@keyframes auth-orb-c {
+  0%, 100% { transform: translate3d(-50%, -50%, 0) scale(1); }
+  50% { transform: translate3d(-58%, -42%, 0) scale(1.16); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-aurora__orb {
+    animation: none !important;
+  }
+}
+
 .auth-toolbar {
   position: absolute;
   top: 1rem;
   right: 1rem;
+  z-index: 2;
 }
 .auth-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 24rem;
   padding: 1.75rem 1.75rem 2rem;
-  background: var(--color-card);
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  /* Single unprefixed rule — lightningcss adds the -webkit- prefix (cssTarget
+     pinned via tdsViteBuild); never hand-author both (tds-shared#10). */
+  backdrop-filter: blur(16px) saturate(1.4);
   border: 1px solid var(--color-line);
   border-radius: 1rem;
-  box-shadow: 0 12px 40px -24px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 24px 60px -32px rgba(0, 0, 0, 0.5),
+    0 2px 8px -4px rgba(0, 0, 0, 0.2);
+}
+@media (max-width: 26rem) {
+  .auth-page {
+    padding: 1rem;
+  }
+  .auth-card {
+    padding: 1.5rem 1.35rem 1.75rem;
+    border-radius: 0.875rem;
+  }
 }
 .auth-card__brand {
   position: static;

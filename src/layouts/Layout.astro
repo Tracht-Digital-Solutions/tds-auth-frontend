@@ -52,6 +52,13 @@ const { title, description = site.description } = Astro.props;
   </head>
   <body>
     <main class="auth-page">
+      {/* Decorative animated brand aurora behind the card. Purely visual —
+          hidden from assistive tech and fully stilled under reduced-motion. */}
+      <div class="auth-aurora" aria-hidden="true">
+        <span class="auth-aurora__orb auth-aurora__orb--1"></span>
+        <span class="auth-aurora__orb auth-aurora__orb--2"></span>
+        <span class="auth-aurora__orb auth-aurora__orb--3"></span>
+      </div>
       <div class="auth-toolbar">
         <ThemeToggle client:idle />
       </div>

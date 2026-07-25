@@ -31,6 +31,13 @@ in one place.
 - **Forced password change**: a login that returns `mustChangePassword` (or a `/me` that
   reports it) is routed to `/passwort` before the redirect. `PUT /password` needs a valid
   session (min 12 chars, must differ), then rotates the session.
+- **Login chrome** (`global.css`): the card sits on a frosted glass panel
+  (`backdrop-filter`, brand-token background) over an **animated aurora** — three
+  drifting radial-gradient orbs (`.auth-aurora__orb--1..3`) tinted with the flipping
+  `--color-accent`/`--color-surface-navy`/`--color-primary` tokens so it reads right in
+  light *and* dark. The orbs are `aria-hidden` decoration and fully stilled under
+  `prefers-reduced-motion`. Layout is responsive (fluid card, `max-width: 26rem` tightens
+  padding on phones).
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
