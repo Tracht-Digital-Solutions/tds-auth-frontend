@@ -23,6 +23,12 @@ in one place.
   passed between sites. JS never reads the cookie; identity comes from `GET /me`.
 - **On-mount SSO** (`LoginForm.tsx`): if a session already exists, the form never renders —
   the user is forwarded straight to the target.
+- **The login page does NOT advertise the cross-surface session.** The lede used to read
+  "Eine Anmeldung gilt für alle Bereiche (Panel, Portal und Tools)" — that sentence is
+  removed on purpose (it tells an unauthenticated visitor which surfaces exist). The
+  explanation now lives where a *logged-in* user can look it up: the frontend host's
+  `/wiki` FAQ (`tds-core-frontend-pkg`) and the Live-Chat-Widget FAQ
+  (`tds-ext-live-chat-cta-pkg`, seeded row `sso-scope`). Don't reintroduce it here.
 - **`?next=` + open-redirect guard** (`src/lib/redirect.ts`): the frontends send an absolute
   return URL. Because it flows into `location.replace`, it is validated against an
   allow-list — `https://` on `tracht-digital.de` or any subdomain (plus `localhost` for
