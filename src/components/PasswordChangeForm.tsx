@@ -42,7 +42,7 @@ export default function PasswordChangeForm() {
     };
   }, []);
 
-  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     if (newPw.length < MIN_LEN) {

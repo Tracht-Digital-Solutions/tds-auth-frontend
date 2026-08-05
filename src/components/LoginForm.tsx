@@ -100,7 +100,7 @@ export default function LoginForm() {
     setPasskeyBusy(false);
   };
 
-  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setBusy(true);
