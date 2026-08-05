@@ -37,6 +37,24 @@ in one place.
 - **Forced password change**: a login that returns `mustChangePassword` (or a `/me` that
   reports it) is routed to `/passwort` before the redirect. `PUT /password` needs a valid
   session (min 12 chars, must differ), then rotates the session.
+- **"30 Tage angemeldet bleiben"** is a checkbox that sends `remember: true`. It does not
+  lengthen the session token — the API issues a second, rotating remember-me cookie and
+  the panels trade it at `POST /refresh` (see `tds-auth-api`'s AGENTS.md for why a longer
+  JWT would be a longer *non-revocable* credential). Nothing here needs to know that
+  beyond passing the flag.
+- **Passkeys** (`src/lib/passkeys.ts`, `/passkeys`): sign-in is **usernameless** — the
+  request carries no `allowCredentials`, the authenticator offers its discoverable
+  credentials for `tracht-digital.de` and the user picks one. So there is no email field
+  in that flow and no way to probe whether an address has a passkey. The lib is the whole
+  base64url ↔ `ArrayBuffer` translation layer; nothing else touches a buffer.
+  - **The passkey button is `type="button"`.** Inside a `<form>` a bare `<button>`
+    submits it, which would fire the password login at the same time.
+  - **Dismissing the OS prompt is not an error.** `NotAllowedError`/`AbortError` mean the
+    user decided; showing "Anmeldung fehlgeschlagen" there trains people to distrust the
+    message. Only real failures get a message.
+  - **Support is detected after hydration** (`useEffect`), never at build time — the
+    static HTML is shared by every visitor, so the button would otherwise appear in
+    browsers that cannot use it.
 - **Login chrome** (`global.css`): the card sits on a frosted glass panel
   (`backdrop-filter`, brand-token background) over an **animated aurora** — three
   drifting radial-gradient orbs (`.auth-aurora__orb--1..3`) tinted with the flipping
@@ -60,6 +78,11 @@ in one place.
   integration. Don't add one.
 - Design tokens/components come from `tds-shared-pkg` (`base.css` + `app.css` + `ThemeToggle`/
   `CookieNotice`/`Spinner`). Don't re-inline them.
+- **`.btn` AND `.btn-*` — both classes, always.** `.btn` carries the geometry (radius,
+  padding, 44px touch target); `.btn-primary` contributes colour only. Every button on
+  this site shipped with `.btn-primary` alone, which is why the login button rendered as
+  a hard-edged rectangle with no padding. `global.css` may position a button
+  (`.auth-form .btn { margin-top }`) but must never re-declare its geometry.
 
 ## Tests
 

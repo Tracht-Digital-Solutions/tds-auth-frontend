@@ -1,0 +1,19 @@
+---
+/**
+ * Passkey-Verwaltung. Requires a session — the island bounces to the login with
+ * a `?next=` back here when there is none, the same contract every other
+ * first-party surface uses.
+ */
+import Layout from "~/layouts/Layout.astro";
+import PasskeyManager from "~/components/PasskeyManager.tsx";
+---
+
+<Layout title="Passkeys — Tracht Digital Solutions">
+  <h1>Passkeys</h1>
+  <p class="auth-card__lede">
+    Mit einem Passkey melden Sie sich per Fingerabdruck, Gesichtserkennung oder Geräte-PIN an —
+    ohne Passwort. Der Schlüssel bleibt auf Ihrem Gerät und gilt für alle Bereiche von
+    Tracht Digital Solutions.
+  </p>
+  <PasskeyManager client:load />
+</Layout>

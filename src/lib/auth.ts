@@ -39,13 +39,21 @@ export interface LoginResult {
   mustChangePassword: boolean;
 }
 
-/** POST /login. On success the API sets the shared session cookie. */
-export async function login(email: string, password: string): Promise<LoginResult> {
+/**
+ * POST /login. On success the API sets the shared session cookie.
+ *
+ * `remember` opts into "30 Tage angemeldet bleiben": a SECOND httpOnly cookie
+ * holding a rotating remember-me token. The session JWT stays short-lived
+ * either way — staying signed in is a refresh at `/refresh`, not a longer
+ * token, so a disabled account stops working within the hour rather than in 30
+ * days. Sent only as an explicit `true`.
+ */
+export async function login(email: string, password: string, remember = false): Promise<LoginResult> {
   const res = await fetch(`${AUTH_API_URL}/login`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, remember }),
   });
   let mustChangePassword = false;
   if (res.ok) {

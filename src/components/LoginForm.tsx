@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { fetchMe, login } from "~/lib/auth";
+import { loginWithPasskey, passkeysSupported } from "~/lib/passkeys";
 import { resolveTarget } from "~/lib/redirect";
 
 /**
@@ -15,7 +16,13 @@ export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  // Feature detection has to happen after hydration: the server-rendered HTML
+  // is shared by every visitor, so deciding this at build time would show the
+  // button to browsers that cannot use it.
+  const [canUsePasskeys, setCanUsePasskeys] = useState(false);
   // Start in "checking" so we don't flash the form before the SSO probe.
   const [checking, setChecking] = useState(true);
 
@@ -27,6 +34,10 @@ export default function LoginForm() {
     const q = next ? `?next=${encodeURIComponent(next)}` : "";
     location.replace(`/passwort${q}`);
   };
+
+  useEffect(() => {
+    setCanUsePasskeys(passkeysSupported());
+  }, []);
 
   // On-mount SSO: already authenticated anywhere → forward immediately.
   useEffect(() => {
@@ -50,12 +61,51 @@ export default function LoginForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Finish a successful sign-in: forced password change, else confirm + forward. */
+  const proceed = async (mustChangePassword: boolean): Promise<string | null> => {
+    if (mustChangePassword) {
+      goToPasswordChange();
+      return null;
+    }
+    // Confirm the cookie stuck before leaving (a blocked third-party cookie
+    // becomes a message, not a redirect loop).
+    const me = await fetchMe();
+    if (!me) return "Sitzung konnte nicht bestätigt werden. Bitte erneut versuchen.";
+    location.replace(resolveTarget(rawNext(), me, location.origin));
+    return null;
+  };
+
+  const signInWithPasskey = async () => {
+    setError(null);
+    setPasskeyBusy(true);
+    const res = await loginWithPasskey(remember);
+    if (res.ok) {
+      const message = await proceed(res.mustChangePassword === true);
+      if (message === null) return; // navigating away
+      setError(message);
+      setPasskeyBusy(false);
+      return;
+    }
+    // Dismissing the OS prompt is a decision, not a failure — saying
+    // "fehlgeschlagen" there trains people to distrust the message.
+    if (res.reason !== "abort") {
+      setError(
+        res.status === 429
+          ? "Zu viele Versuche. Bitte später erneut versuchen."
+          : res.status === 403
+            ? "Dieses Konto ist deaktiviert."
+            : "Anmeldung mit Passkey fehlgeschlagen. Bitte mit E-Mail und Passwort anmelden.",
+      );
+    }
+    setPasskeyBusy(false);
+  };
+
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const res = await login(email, password);
+      const res = await login(email, password, remember);
       if (!res.ok) {
         setError(
           res.status === 401
@@ -69,19 +119,11 @@ export default function LoginForm() {
         setBusy(false);
         return;
       }
-      if (res.mustChangePassword) {
-        goToPasswordChange();
-        return;
-      }
-      // Confirm the cookie stuck before leaving (a blocked third-party cookie
-      // becomes a message, not a redirect loop).
-      const me = await fetchMe();
-      if (!me) {
-        setError("Sitzung konnte nicht bestätigt werden. Bitte erneut versuchen.");
+      const message = await proceed(res.mustChangePassword);
+      if (message !== null) {
+        setError(message);
         setBusy(false);
-        return;
       }
-      location.replace(resolveTarget(rawNext(), me, location.origin));
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
       setBusy(false);
@@ -122,9 +164,33 @@ export default function LoginForm() {
           required
         />
       </label>
-      <button className="btn-primary" type="submit" disabled={busy}>
+      <label className="auth-check">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(ev) => setRemember(ev.target.checked)}
+        />
+        <span>30 Tage angemeldet bleiben</span>
+      </label>
+      <button className="btn btn-primary" type="submit" disabled={busy || passkeyBusy}>
         {busy ? <Spinner size="sm" /> : "Anmelden"}
       </button>
+
+      {canUsePasskeys ? (
+        <>
+          <p className="auth-divider"><span>oder</span></p>
+          {/* type="button": inside a <form>, a bare <button> submits it — the
+              passkey flow would fire the password login at the same time. */}
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => void signInWithPasskey()}
+            disabled={busy || passkeyBusy}
+          >
+            {passkeyBusy ? <Spinner size="sm" /> : "Mit Passkey anmelden"}
+          </button>
+        </>
+      ) : null}
     </form>
   );
 }

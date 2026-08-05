@@ -126,7 +126,7 @@ export default function PasswordChangeForm() {
           required
         />
       </label>
-      <button className="btn-primary" type="submit" disabled={busy}>
+      <button className="btn btn-primary" type="submit" disabled={busy}>
         {busy ? <Spinner size="sm" /> : "Passwort speichern"}
       </button>
     </form>
