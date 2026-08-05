@@ -110,7 +110,18 @@ describe("login", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       email: "julian@tracht-digital.de",
       password: "hunter2hunter2",
+      // "Angemeldet bleiben" is opt-in and always sent explicitly. The API
+      // accepts only a literal `true`, so an omitted field would be read as
+      // "no" anyway — sending it makes the default visible here.
+      remember: false,
     });
+  });
+
+  it("passes the remember-me flag through", async () => {
+    fetchMock.mockResolvedValue(res(200, {}));
+    await login("julian@tracht-digital.de", "hunter2hunter2", true);
+
+    expect(JSON.parse(callInit().body as string).remember).toBe(true);
   });
 
   it("reports success without a forced password change", async () => {

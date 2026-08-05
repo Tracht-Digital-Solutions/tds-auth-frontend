@@ -175,7 +175,10 @@ describe("submitting credentials", () => {
     await submitCredentials("julian@tracht-digital.de", "hunter2hunter2");
 
     await waitFor(() =>
-      expect(login).toHaveBeenCalledWith("julian@tracht-digital.de", "hunter2hunter2"),
+      // The third argument is "30 Tage angemeldet bleiben" — unchecked here, and
+      // it must stay opt-in: a default of `true` would hand every login a
+      // 30-day credential nobody asked for.
+      expect(login).toHaveBeenCalledWith("julian@tracht-digital.de", "hunter2hunter2", false),
     );
   });
 
