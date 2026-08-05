@@ -103,17 +103,25 @@ describe("font loading", () => {
 });
 
 describe("login chrome", () => {
-  it("renders the aurora as aria-hidden decoration", () => {
-    expect(layout).toMatch(/class="auth-aurora"\s+aria-hidden="true"/);
-    for (const n of [1, 2, 3]) {
-      expect(layout).toContain(`auth-aurora__orb--${n}`);
-    }
+  it("renders the artwork panel as aria-hidden decoration", () => {
+    // It carries no information — announcing it would put a shrug in front of
+    // every screen-reader user before they reach the form.
+    expect(layout).toMatch(/class="auth-art"\s+aria-hidden="true"/);
+    expect(layout).toContain("LoginArtwork");
   });
 
-  it("stills the aurora under prefers-reduced-motion", () => {
-    expect(globalCss).toMatch(/prefers-reduced-motion/);
-    const reducedMotionBlock = globalCss.slice(globalCss.indexOf("prefers-reduced-motion"));
-    expect(reducedMotionBlock).toMatch(/animation:\s*none/);
+  it("puts the form BEFORE the artwork in the DOM", () => {
+    // On a wide screen the artwork sits to the right and grid lifts it above
+    // the form on narrow ones — but tab order follows the DOM, and it must
+    // always reach the fields first. Swapping these two blocks to "fix" the
+    // mobile layout would silently make decoration the first stop.
+    expect(layout.indexOf('class="auth-panel"')).toBeLessThan(layout.indexOf('class="auth-art"'));
+  });
+
+  it("gates the artwork's entrance animation on prefers-reduced-motion", () => {
+    // Opt-IN (`no-preference`), not opt-out: an animation that has to be
+    // switched off is one that ships to everyone who never gets asked.
+    expect(globalCss).toMatch(/@media\s*\(prefers-reduced-motion:\s*no-preference\)/);
   });
 
   it("keeps the theme bootstrap as a raw inline script", () => {

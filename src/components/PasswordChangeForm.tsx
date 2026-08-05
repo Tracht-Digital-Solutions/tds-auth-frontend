@@ -93,7 +93,7 @@ export default function PasswordChangeForm() {
       <label>
         Aktuelles Passwort
         <input
-          className="field"
+          className="field-boxed"
           type="password"
           value={oldPw}
           onChange={(ev) => setOldPw(ev.target.value)}
@@ -105,7 +105,7 @@ export default function PasswordChangeForm() {
       <label>
         Neues Passwort
         <input
-          className="field"
+          className="field-boxed"
           type="password"
           value={newPw}
           onChange={(ev) => setNewPw(ev.target.value)}
@@ -117,7 +117,7 @@ export default function PasswordChangeForm() {
       <label>
         Neues Passwort bestätigen
         <input
-          className="field"
+          className="field-boxed"
           type="password"
           value={confirmPw}
           onChange={(ev) => setConfirmPw(ev.target.value)}

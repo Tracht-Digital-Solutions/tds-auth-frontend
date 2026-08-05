@@ -8,6 +8,7 @@ import "@fontsource/lato/900.css";
 import "@fontsource-variable/geist";
 import "~/styles/global.css";
 import { ThemeToggle, CookieNotice } from "@tracht-digital-solutions/tds-shared/components";
+import LoginArtwork from "~/components/LoginArtwork.tsx";
 import { site } from "~/lib/site";
 
 interface Props {
@@ -51,25 +52,33 @@ const { title, description = site.description } = Astro.props;
     <title>{title}</title>
   </head>
   <body>
+    {/*
+      Split shell: the form on the left, a freshly generated composition on the
+      right. The form comes FIRST in the DOM on purpose — on a wide screen the
+      artwork sits to its right, and on a narrow one CSS grid lifts the artwork
+      above it, but keyboard and screen-reader order stay "sign in, then
+      decoration" either way.
+    */}
     <main class="auth-page">
-      {/* Decorative animated brand aurora behind the card. Purely visual —
-          hidden from assistive tech and fully stilled under reduced-motion. */}
-      <div class="auth-aurora" aria-hidden="true">
-        <span class="auth-aurora__orb auth-aurora__orb--1"></span>
-        <span class="auth-aurora__orb auth-aurora__orb--2"></span>
-        <span class="auth-aurora__orb auth-aurora__orb--3"></span>
+      <div class="auth-panel">
+        <div class="auth-panel__inner">
+          <header class="auth-brand">
+            <strong class="brand-wordmark text-lg"
+              >Tracht<span class="accent-italic"> Solutions</span></strong
+            >
+            <div class="auth-brand__toolbar">
+              <ThemeToggle client:idle />
+            </div>
+          </header>
+          <slot />
+        </div>
       </div>
-      <div class="auth-toolbar">
-        <ThemeToggle client:idle />
+
+      {/* Decorative only — the island renders nothing until it has generated a
+          composition, and the panel's own gradient covers that first frame. */}
+      <div class="auth-art" aria-hidden="true">
+        <LoginArtwork client:load />
       </div>
-      <section class="auth-card">
-        <header class="brand-header auth-card__brand">
-          <strong class="brand-wordmark text-lg"
-            >Tracht<span class="accent-italic"> Solutions</span></strong
-          >
-        </header>
-        <slot />
-      </section>
     </main>
 
     <CookieNotice client:idle variant="panel" />

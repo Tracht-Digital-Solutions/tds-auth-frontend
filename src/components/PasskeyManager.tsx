@@ -140,7 +140,7 @@ export default function PasskeyManager() {
       <label>
         Name für dieses Gerät
         <input
-          className="field"
+          className="field-boxed"
           type="text"
           value={name}
           onChange={(ev) => setName(ev.target.value)}

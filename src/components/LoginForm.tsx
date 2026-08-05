@@ -144,7 +144,7 @@ export default function LoginForm() {
       <label>
         E-Mail
         <input
-          className="field"
+          className="field-boxed"
           type="email"
           value={email}
           onChange={(ev) => setEmail(ev.target.value)}
@@ -156,7 +156,7 @@ export default function LoginForm() {
       <label>
         Passwort
         <input
-          className="field"
+          className="field-boxed"
           type="password"
           value={password}
           onChange={(ev) => setPassword(ev.target.value)}
@@ -164,14 +164,18 @@ export default function LoginForm() {
           required
         />
       </label>
-      <label className="auth-check">
+      {/* Explicit id/htmlFor rather than a wrapping <label>: the wrapper would
+          be a direct child of `.auth-form` and inherit the stacked, 600-weight
+          field-label treatment, which is what made this read as a third input. */}
+      <div className="auth-remember">
         <input
+          id="remember-me"
           type="checkbox"
           checked={remember}
           onChange={(ev) => setRemember(ev.target.checked)}
         />
-        <span>30 Tage angemeldet bleiben</span>
-      </label>
+        <label htmlFor="remember-me">30 Tage angemeldet bleiben</label>
+      </div>
       <button className="btn btn-primary" type="submit" disabled={busy || passkeyBusy}>
         {busy ? <Spinner size="sm" /> : "Anmelden"}
       </button>

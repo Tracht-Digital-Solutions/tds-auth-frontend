@@ -10,158 +10,163 @@
 @import "@tracht-digital-solutions/tds-shared/styles/base.css";
 @import "@tracht-digital-solutions/tds-shared/styles/app.css";
 
+/* Tailwind ignores node_modules by default, and the shared React islands are
+   built out of utility classes (`ThemeToggle` is `inline-flex w-9 h-9
+   rounded-full …`). Without this the utilities are never generated and the
+   toggle renders as two raw stacked SVGs — which is exactly how it shipped: no
+   error, no warning, just an unstyled control in the corner.
+   MUST come after the @imports; `@source` before an `@import` is an error. */
+@source "../../node_modules/@tracht-digital-solutions/tds-shared";
+
 :root {
   --font-display: "Lato", "Helvetica Neue", Arial, sans-serif;
   --font-body: "Geist Variable", "Geist", "Helvetica Neue", Arial, sans-serif;
 }
 
-/* ---- Central-login chrome (site-local) ---- */
+/* ============================================================================
+   Central-login chrome (site-local)
+
+   A split shell: form left, freshly generated artwork right. It replaces a
+   frosted card floating over an animated aurora — two competing focal points,
+   with the form never actually winning. Giving the artwork its own half lets
+   the form sit plainly on the page, which is both calmer and easier to read.
+
+   DOM order is form-then-artwork so the keyboard reaches the fields first;
+   below the split breakpoint, grid rows lift the artwork above it visually
+   without touching that order.
+   ========================================================================= */
+
 .auth-page {
-  position: relative;
   min-height: 100dvh;
   display: grid;
-  place-items: center;
-  padding: 1.5rem;
+  /* Narrow: a slim artwork band, then the form. */
+  grid-template-rows: clamp(7rem, 22vh, 11rem) 1fr;
+  grid-template-columns: 1fr;
   background: var(--color-paper);
-  overflow: hidden; /* contain the drifting aurora orbs (no scrollbars) */
 }
 
-/* Animated brand aurora — three soft radial-gradient orbs drifting behind the
-   card, tinted with the flipping brand tokens so it reads right in light AND
-   dark. Decorative only; stilled under prefers-reduced-motion below. */
-.auth-aurora {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.auth-aurora__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(24px);
-  opacity: 0.55;
-  will-change: transform;
-}
-.auth-aurora__orb--1 {
-  width: min(64vmin, 480px);
-  aspect-ratio: 1;
-  top: -14vmin;
-  left: -10vmin;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--color-accent) 42%, transparent),
-    transparent 68%
-  );
-  animation: auth-orb-a 20s ease-in-out infinite;
-}
-.auth-aurora__orb--2 {
-  width: min(56vmin, 420px);
-  aspect-ratio: 1;
-  bottom: -16vmin;
-  right: -8vmin;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--color-surface-navy) 40%, transparent),
-    transparent 68%
-  );
-  animation: auth-orb-b 26s ease-in-out infinite;
-}
-.auth-aurora__orb--3 {
-  width: min(44vmin, 340px);
-  aspect-ratio: 1;
-  top: 42%;
-  left: 52%;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--color-primary) 26%, transparent),
-    transparent 70%
-  );
-  animation: auth-orb-c 30s ease-in-out infinite;
-}
-[data-theme="dark"] .auth-aurora__orb {
-  opacity: 0.6;
-}
-@keyframes auth-orb-a {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(6vmin, 5vmin, 0) scale(1.14); }
-}
-@keyframes auth-orb-b {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(-7vmin, -4vmin, 0) scale(1.1); }
-}
-@keyframes auth-orb-c {
-  0%, 100% { transform: translate3d(-50%, -50%, 0) scale(1); }
-  50% { transform: translate3d(-58%, -42%, 0) scale(1.16); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .auth-aurora__orb {
-    animation: none !important;
-  }
+.auth-panel {
+  grid-row: 2;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.5rem 3rem;
 }
 
-.auth-toolbar {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 2;
-}
-.auth-card {
-  position: relative;
-  z-index: 1;
+.auth-panel__inner {
   width: 100%;
   max-width: 24rem;
-  padding: 1.75rem 1.75rem 2rem;
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
-  /* Single unprefixed rule — lightningcss adds the -webkit- prefix (cssTarget
-     pinned via tdsViteBuild); never hand-author both (tds-shared#10). */
-  backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid var(--color-line);
-  border-radius: 1rem;
-  box-shadow:
-    0 24px 60px -32px rgba(0, 0, 0, 0.5),
-    0 2px 8px -4px rgba(0, 0, 0, 0.2);
 }
-@media (max-width: 26rem) {
+
+.auth-art {
+  grid-row: 1;
+  position: relative;
+  overflow: hidden;
+  /* The panel paints itself before the island has generated anything, so the
+     first frame is a brand surface rather than a hole. Deliberately a FIXED
+     dark field in both themes (the surface-* tokens don't flip): it is the
+     contrast partner to the form half, and a light artwork panel beside a
+     light form would flatten the whole split. */
+  background:
+    radial-gradient(
+      120% 90% at 15% 10%,
+      color-mix(in srgb, var(--color-surface-navy) 80%, black),
+      transparent 70%
+    ),
+    linear-gradient(
+      150deg,
+      var(--color-surface-navy),
+      color-mix(in srgb, var(--color-surface-ink) 85%, black)
+    );
+}
+
+.auth-art__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* `screen` is what makes overlapping ribbons read as light rather than as
+     stacked paint — the whole look depends on it. */
+  mix-blend-mode: screen;
+}
+
+/* Fade the composition in once it exists. Without this the shapes appear a
+   frame after paint, which reads as a glitch rather than as loading. */
+@media (prefers-reduced-motion: no-preference) {
+  .auth-art__canvas {
+    animation: auth-art-in var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out) both;
+  }
+}
+@keyframes auth-art-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Wide: form left, artwork right, both full height. */
+@media (min-width: 62rem) {
   .auth-page {
-    padding: 1rem;
+    grid-template-rows: 1fr;
+    grid-template-columns: minmax(26rem, 42%) 1fr;
   }
-  .auth-card {
-    padding: 1.5rem 1.35rem 1.75rem;
-    border-radius: 0.875rem;
+  .auth-panel {
+    grid-row: 1;
+    grid-column: 1;
+    padding: 3rem;
+  }
+  .auth-art {
+    grid-row: 1;
+    grid-column: 2;
   }
 }
-.auth-card__brand {
-  position: static;
-  background: none;
-  backdrop-filter: none;
-  border: 0;
-  padding: 0;
-  margin-bottom: 1.25rem;
+
+/* ---- The form half ---- */
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
 }
-.auth-card h1 {
+.auth-brand__toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.auth-panel h1 {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.375rem;
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 1.875rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.5rem;
 }
 .auth-card__lede {
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.9375rem;
+  line-height: 1.55;
   color: var(--color-muted);
-  margin: 0 0 1.25rem;
+  margin: 0 0 1.75rem;
   text-wrap: pretty;
 }
+
 .auth-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-.auth-form label {
+/* DIRECT children only. `.auth-remember` nests a label that must read as body
+   text, not as a field label — a descendant selector here would give it the
+   600-weight muted treatment and stack it above its own checkbox. */
+.auth-form > label {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.375rem;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-muted);
@@ -172,33 +177,51 @@
    there is no radius, no padding and no 44px touch target, so the login button
    rendered as a hard-edged rectangle. Both classes are always required. */
 .auth-form .btn {
-  margin-top: 0.25rem;
   justify-content: center;
 }
-/* "30 Tage angemeldet bleiben". A row, not a column: `.auth-form label` stacks
-   its children, which would put the checkbox above its own text. */
-.auth-check {
-  flex-direction: row;
+.auth-form .btn-primary {
+  margin-top: 0.25rem;
+}
+
+/* ---- "30 Tage angemeldet bleiben" ----
+   Its own row directly under the password field and tightened against it,
+   because it modifies THAT field's consequence. It used to sit in the form's
+   1rem flow as an `.auth-form label`, which gave it the weight and colour of a
+   field label — so it read as a third input rather than as an option. */
+.auth-remember {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin-top: -0.375rem;
+}
+.auth-remember input[type="checkbox"] {
+  flex: none;
+  width: 1.0625rem;
+  height: 1.0625rem;
+  margin: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.auth-remember label {
+  font-size: 0.8125rem;
   font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-muted);
   cursor: pointer;
+  /* The box is ~17px; letting the text extend the hit area is the difference
+     between a comfortable target and a fiddly one. */
+  padding: 0.25rem 0;
 }
-.auth-check input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--color-accent, currentColor);
-  cursor: pointer;
-}
-/* "oder" rule between the password form and the passkey button. */
+
+/* ---- "oder" rule between the password form and the passkey button ---- */
 .auth-divider {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin: 0.25rem 0 0;
-  font-size: 0.75rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--color-muted);
 }
 .auth-divider::before,
@@ -208,7 +231,8 @@
   height: 1px;
   background: var(--color-line);
 }
-/* Passkey list. Plain rows — this site carries no panel chrome. */
+
+/* ---- Passkey list. Plain rows — this site carries no panel chrome. ---- */
 .passkey-list {
   display: flex;
   flex-direction: column;
@@ -234,8 +258,9 @@
   font-weight: 400;
   color: var(--color-muted);
 }
+
 .auth-hint {
-  margin-top: 1rem;
+  margin-top: 1.25rem;
   font-size: 0.8125rem;
   color: var(--color-muted);
   text-align: center;

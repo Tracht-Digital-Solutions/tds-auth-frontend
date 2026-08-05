@@ -55,15 +55,51 @@ in one place.
   - **Support is detected after hydration** (`useEffect`), never at build time — the
     static HTML is shared by every visitor, so the button would otherwise appear in
     browsers that cannot use it.
-- **Login chrome** (`global.css`): the card sits on a frosted glass panel
-  (`backdrop-filter`, brand-token background) over an **animated aurora** — three
-  drifting radial-gradient orbs (`.auth-aurora__orb--1..3`) tinted with the flipping
-  `--color-accent`/`--color-surface-navy`/`--color-primary` tokens so it reads right in
-  light *and* dark. The orbs are `aria-hidden` decoration and fully stilled under
-  `prefers-reduced-motion`. Layout is responsive (fluid card, `max-width: 26rem` tightens
-  padding on phones).
+- **Login chrome** (`global.css`) is a **split shell**: the form on the left, a
+  generated composition on the right (`≥ 62rem`); below that the artwork becomes a slim
+  band above the form. It replaced a frosted card floating over an animated aurora —
+  two competing focal points where the form never actually won.
+  - **The form comes FIRST in the DOM.** Grid rows move the artwork above it on narrow
+    screens without touching source order, so the keyboard always reaches the fields
+    first. Swapping the two blocks to "fix" the mobile layout would silently make
+    decoration the first tab stop; `static-posture.test.ts` pins the order.
+  - **The artwork panel is a FIXED dark field in both themes** (`--color-surface-*`,
+    which don't flip). It is the contrast partner to the form half — a light artwork
+    panel beside a light form flattens the whole split.
+  - The panel paints its own gradient in CSS, so the frame before the island has
+    generated anything is a brand surface rather than a hole.
+
+- **The artwork is generated per visit** (`src/lib/artwork.ts` + `components/LoginArtwork.tsx`).
+  - **Nothing renders server-side, deliberately.** This is a static site: anything
+    produced at build time would be the same picture for every visitor until the next
+    deploy, and seeding it in the initial render instead would make the server's markup
+    disagree with the client's on *every* load — a hydration mismatch by construction.
+    Generating in an effect is the only variant that is both fresh and correct.
+  - **The generator is bounded, not free.** Anything random enough to be interesting is
+    random enough to be ugly, so ribbon count, curvature, thickness, opacity and palette
+    are clamped; only the arrangement inside those ranges varies. One composition draws
+    from **two or three** hues, never the full six — all of them at once reads as a
+    colour test card. `artwork.test.ts` sweeps 300 seeds against those bounds.
+  - **It is seeded and pure**, so a composition is reproducible from its number alone.
+    That is what makes it testable, and what would let a specific one be pinned later.
+  - Colours are emitted as `var(--color-*)`, never literals — the artwork follows the
+    theme for free instead of needing a second palette.
+  - `mix-blend-mode: screen` on the SVG is load-bearing: it is what makes overlapping
+    ribbons read as light rather than as stacked paint.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
+
+- **`@source` for the shared package, or its islands render unstyled.** The shared React
+  components are built from Tailwind utilities (`ThemeToggle` is
+  `inline-flex w-9 h-9 rounded-full …`), and **Tailwind ignores `node_modules` by
+  default**. Without the `@source` line in `global.css` those utilities are never
+  generated: the toggle shipped as two raw stacked SVGs in the corner, with no error and
+  no warning. It must sit **after** the `@import`s — `@source` before an `@import` is a
+  build error. Same trap the frontend products carry (root CLAUDE.md).
+- **Login inputs use `.field-boxed`, not `.field`.** `.field` is the underline variant;
+  at rest it is a single hairline, which next to the browser's focus outline on the
+  focused sibling made the form look half-rendered. Boxed is also what every panel
+  settings form uses.
 
 - **Tailwind v4 runs through `@tailwindcss/postcss`** (`postcss.config.mjs`), never the
   Vite plugin. Deleting that file silently ships unstyled output.
@@ -78,6 +114,10 @@ in one place.
   integration. Don't add one.
 - Design tokens/components come from `tds-shared-pkg` (`base.css` + `app.css` + `ThemeToggle`/
   `CookieNotice`/`Spinner`). Don't re-inline them.
+- **The remember-me checkbox is `.auth-remember`, not a `.auth-form` label.** `.auth-form
+  > label` (direct children only) styles field labels — stacked, 600-weight, muted. A
+  wrapping `<label>` inherited that and made the option read as a third input, so it uses
+  an explicit `id`/`htmlFor` pair inside a `<div>` instead. Keep the child combinator.
 - **`.btn` AND `.btn-*` — both classes, always.** `.btn` carries the geometry (radius,
   padding, 44px touch target); `.btn-primary` contributes colour only. Every button on
   this site shipped with `.btn-primary` alone, which is why the login button rendered as
@@ -102,6 +142,12 @@ in one place.
   forward *without* rendering the form), the `mustChangePassword` branch from both sources,
   `?next=` propagation into `/passwort`, the post-login `/me` re-confirmation, and every
   status→message mapping.
+- **`src/lib/artwork.test.ts`** — the generator's *range*, not one picture: every seed
+  produces a composed frame (bounded shape counts, no NaN in a path, a blur index that
+  resolves, opacities strictly between 0 and 1, ribbons overhanging both edges so no
+  stroke cap shows), the same seed always produces the same frame, and 300 seeds produce
+  300 distinct ones — a PRNG wired up wrongly still passes the first two checks and
+  renders the identical picture forever.
 - **`tests/static-posture.test.ts`** — the AGENTS.md traps that fail *silently* (build stays
   green, production quietly breaks): noindex meta + `Disallow: /` + no sitemap, Tailwind via
   `@tailwindcss/postcss`, Fontsource as JS imports, the `tdsViteBuild` spread. It reads the
