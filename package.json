@@ -1,6 +1,6 @@
 {
   "name": "tds-auth-frontend",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,15 +14,15 @@
   },
   "dependencies": {
     "@astrojs/check": "^0.9.9",
-    "@astrojs/react": "^5.0.5",
+    "@astrojs/react": "^6.0.2",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource/lato": "^5.2.7",
-    "@tailwindcss/postcss": "~4.2.4",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tracht-digital-solutions/tds-shared": "^0.16.0",
-    "astro": "^6.4.2",
+    "astro": "^7.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwindcss": "~4.2.4",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.6.0"
   },
   "devDependencies": {

@@ -1,4 +1,10 @@
-@import "tailwindcss";
+/* `tailwindcss/index.css`, NOT the bare `tailwindcss`. Under Astro 7 / Vite 8,
+   Vite's own postcss-import step resolves this specifier BEFORE
+   @tailwindcss/postcss gets to replace it, and a bare package name is not a
+   file — the build dies with `[postcss] ENOENT: … open '<root>/tailwindcss'`.
+   Naming the entry file makes it resolvable, and Tailwind's plugin still
+   expands it. (Astro 6 / Vite 7 accepted the bare form.) */
+@import "tailwindcss/index.css";
 
 /* Brand design system + shared application chrome. Tokens, dark theme, base
    resets, type primitives, buttons/fields, status pills, spinner and the brand
