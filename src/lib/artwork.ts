@@ -33,6 +33,64 @@ export const PALETTE = [
   "var(--color-accent-pink)",
 ] as const;
 
+/**
+ * Ambient drift for one ribbon — seeded like everything else here.
+ *
+ * The motion is part of the composition, so it comes out of the generator and
+ * not out of `Math.random()` in the component: a composition that is only half
+ * reproducible from its seed is not reproducible at all, and the sweep in
+ * `artwork.test.ts` would have nothing to bound. "Barely noticeable" is a
+ * requirement, and a requirement that is not a number cannot be tested.
+ *
+ * Plain numbers, no units — the component serialises them into CSS custom
+ * properties, the same way it turns `blur` into a `url(#…)`.
+ */
+export interface Drift {
+  /** Peak offset in SVG user units, signed. */
+  dx: number;
+  dy: number;
+  /** Peak rotation in degrees, signed. */
+  rot: number;
+  /**
+   * Peak scale, always >= 1 — the composition breathes outward only, so a
+   * ribbon's over-hang can never be pulled inside the frame and show its cap.
+   */
+  scale: number;
+  /** Seconds for one there-and-back cycle. */
+  dur: number;
+  /**
+   * NEGATIVE seconds. Every shape starts mid-cycle; that phase offset is what
+   * keeps the composition from swelling in unison on load, which is exactly
+   * what makes ambient motion read as "an animation" rather than as drift.
+   */
+  delay: number;
+}
+
+/**
+ * Rings travel a short arc about the canvas centre.
+ *
+ * Rotating a circle about its OWN centre is a no-op, so the pivot is (50,50)
+ * and `rot` moves it along the circumference. Directions alternate by index —
+ * same-direction rings read as the whole picture turning, which is the one
+ * motion the tilt group already owns.
+ */
+export interface Orbit {
+  rot: number;
+  dur: number;
+  delay: number;
+}
+
+/**
+ * Sparks breathe in opacity only. They are the crisp focal points; if they
+ * move, the eye follows them, and the eye belongs on the login form.
+ */
+export interface Pulse {
+  /** Multiplier on the resting opacity at the bottom of the cycle. */
+  dim: number;
+  dur: number;
+  delay: number;
+}
+
 export interface Ribbon {
   /** Cubic path across the full canvas, deliberately over-hanging both edges. */
   d: string;
@@ -41,6 +99,7 @@ export interface Ribbon {
   opacity: number;
   /** Index into {@link BLUR_LEVELS} — bucketed so `<defs>` stays at three filters. */
   blur: number;
+  motion: Drift;
 }
 
 export interface Ring {
@@ -49,6 +108,7 @@ export interface Ring {
   r: number;
   hue: string;
   opacity: number;
+  motion: Orbit;
 }
 
 export interface Spark {
@@ -57,19 +117,47 @@ export interface Spark {
   r: number;
   hue: string;
   opacity: number;
+  motion: Pulse;
 }
 
 export interface Artwork {
   seed: number;
   /** Whole-composition rotation in degrees, for variety without new shapes. */
   tilt: number;
+  /**
+   * Whole-composition sway: peak degrees (signed) and the round-trip period.
+   * Applied by a group OUTSIDE the tilt group — see `LoginArtwork.tsx`.
+   */
+  sway: { deg: number; dur: number };
   ribbons: Ribbon[];
   rings: Ring[];
   sparks: Spark[];
 }
 
-/** Gaussian blur radii the ribbons are bucketed into. */
-export const BLUR_LEVELS = [2.5, 5, 9] as const;
+/**
+ * Gaussian blur radii the ribbons are bucketed into.
+ *
+ * Raised from [2.5, 5, 9]: the ribbons are meant to read as soft colour clouds,
+ * with the rings and sparks left sharp — the contrast between the two is what
+ * gives the composition its depth. The largest value is what sizes the filter
+ * region in `LoginArtwork.tsx` (30 user units of margin); past ~20 the Gaussian's
+ * support runs off that region and the ribbon gets a hard, straight cut-off.
+ */
+export const BLUR_LEVELS = [5, 10, 17] as const;
+
+/**
+ * Alpha correction per blur bucket. Note the direction: softer means DIMMER.
+ *
+ * The intuition runs the other way — a wide Gaussian lowers a ribbon's peak
+ * value, so it looks like it needs more ink to compensate. Measured, that is
+ * backwards. `screen` accumulates over COVERAGE, and at radius 17 a single
+ * ribbon covers most of the canvas, so five of them lift the entire field
+ * rather than crossing in a few bright places. Compensating the peak instead
+ * of the coverage took the panel's mean luminance from 44 to 59 and turned the
+ * dark half of the split into a pink wash — the exact failure the ceiling
+ * below is meant to catch, arrived at from the other side.
+ */
+const BLUR_ALPHA = [1, 0.86, 0.68] as const;
 
 /**
  * mulberry32 — a small, fast, well-distributed PRNG.
@@ -104,11 +192,26 @@ export function generateArtwork(seed: number): Artwork {
   const rng = mulberry32(seed);
   const between = (min: number, max: number) => min + rng() * (max - min);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(rng() * items.length)]!;
+  /** ±magnitude. Consumes one draw, so it is part of the ordering below. */
+  const signed = (value: number) => (rng() < 0.5 ? -value : value);
+  /**
+   * A negative start offset inside the first cycle. One draw.
+   *
+   * Capped at 0.95 of the period rather than the full one: a delay of exactly
+   * `-dur` is phase-equivalent to no delay at all, which is the unison this
+   * exists to prevent, and 2dp rounding can otherwise land there.
+   */
+  const phase = (duration: number) => r(-duration * rng() * 0.95);
 
   // Two or three hues, never all six: a full palette in one frame reads as a
   // colour test card rather than a composition.
   const hues = shuffle(PALETTE, rng).slice(0, rng() < 0.5 ? 2 : 3);
 
+  // NOTE ON ORDERING: every draw below happens in source order, object-literal
+  // property values included. Moving a line — or hoisting a `const` past
+  // another — silently reshuffles EVERY composition, because each shape's
+  // values come off one shared stream. That is not a bug, but it is never a
+  // cosmetic edit either.
   const ribbonCount = Math.floor(between(4, 7.99));
   const ribbons: Ribbon[] = [];
   for (let i = 0; i < ribbonCount; i++) {
@@ -120,43 +223,75 @@ export function generateArtwork(seed: number): Artwork {
     const c2x = between(55, 85);
     const c1y = y0 + between(-45, 45);
     const c2y = y1 + between(-45, 45);
+    // Drawn before the literal because `opacity` is compensated against it.
+    const blur = Math.floor(rng() * BLUR_LEVELS.length);
+    const dur = r(between(30, 60));
 
     ribbons.push({
       d: `M -20 ${r(y0)} C ${r(c1x)} ${r(c1y)}, ${r(c2x)} ${r(c2y)}, 120 ${r(y1)}`,
       hue: pick(hues),
-      width: between(5, 20),
-      opacity: between(0.32, 0.62),
-      blur: Math.floor(rng() * BLUR_LEVELS.length),
+      width: r(between(7, 24)),
+      // Clamped below 0.88: `screen` over a near-black field turns anything
+      // above that into a flat wash, and the panel stops being the dark half of
+      // the split.
+      opacity: r3(Math.min(0.88, between(0.34, 0.6) * BLUR_ALPHA[blur]!)),
+      blur,
+      motion: {
+        dx: r(signed(between(4, 8))),
+        dy: r(signed(between(3, 6))),
+        rot: r(signed(between(0.8, 2))),
+        // 3dp: 2dp would collapse the 1.01–1.035 band onto three values.
+        scale: r3(1 + between(0.01, 0.035)),
+        dur,
+        delay: phase(dur),
+      },
     });
   }
 
   const ringCount = Math.floor(between(2, 4.99));
   const rings: Ring[] = [];
   for (let i = 0; i < ringCount; i++) {
+    const dur = r(between(70, 120));
+
     rings.push({
       cx: r(between(10, 90)),
       cy: r(between(10, 90)),
       r: r(between(8, 34)),
       hue: pick(hues),
-      opacity: between(0.16, 0.4),
+      opacity: r3(between(0.16, 0.4)),
+      motion: {
+        // Direction alternates by index rather than by a draw — counter-rotation
+        // has to be guaranteed, not merely likely.
+        rot: r((i % 2 === 0 ? 1 : -1) * between(1.5, 3)),
+        dur,
+        delay: phase(dur),
+      },
     });
   }
 
   const sparkCount = Math.floor(between(2, 4.99));
   const sparks: Spark[] = [];
   for (let i = 0; i < sparkCount; i++) {
+    const dur = r(between(6, 14));
+
     sparks.push({
       cx: r(between(12, 88)),
       cy: r(between(12, 88)),
       r: r(between(0.5, 1.8)),
       hue: pick(hues),
-      opacity: between(0.5, 0.9),
+      opacity: r3(between(0.5, 0.9)),
+      motion: {
+        dim: r3(between(0.62, 0.85)),
+        dur,
+        delay: phase(dur),
+      },
     });
   }
 
   return {
     seed,
     tilt: r(between(-18, 18)),
+    sway: { deg: signed(2), dur: r(between(100, 140)) },
     ribbons,
     rings,
     sparks,
@@ -166,6 +301,11 @@ export function generateArtwork(seed: number): Artwork {
 /** Round to 2dp — the markup is ~40% smaller and nothing is visibly different. */
 function r(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** 3dp, for the few values where 2dp would quantise a narrow band flat. */
+function r3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 /** Fisher–Yates against the seeded rng, so shuffling stays reproducible. */

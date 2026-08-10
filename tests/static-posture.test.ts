@@ -36,6 +36,24 @@ const astroConfigCode = code(astroConfig);
 const postcssConfig = read("postcss.config.mjs");
 const layout = read("src/layouts/Layout.astro");
 const globalCss = read("src/styles/global.css");
+const artwork = read("src/components/LoginArtwork.tsx");
+
+/**
+ * Body of the first `prefers-reduced-motion: no-preference` block, extracted by
+ * counting braces — a regex cannot see which `}` closes the at-rule once there
+ * are nested rules inside it.
+ */
+const noPreferenceBlock = (() => {
+  const start = globalCss.indexOf("@media (prefers-reduced-motion: no-preference)");
+  if (start < 0) return "";
+  const open = globalCss.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < globalCss.length; i++) {
+    if (globalCss[i] === "{") depth++;
+    else if (globalCss[i] === "}" && --depth === 0) return globalCss.slice(open, i);
+  }
+  return "";
+})();
 const robots = read("public/robots.txt");
 const pkg = JSON.parse(read("package.json")) as {
   version: string;
@@ -122,6 +140,50 @@ describe("login chrome", () => {
     // Opt-IN (`no-preference`), not opt-out: an animation that has to be
     // switched off is one that ships to everyone who never gets asked.
     expect(globalCss).toMatch(/@media\s*\(prefers-reduced-motion:\s*no-preference\)/);
+  });
+
+  it("keeps every looping ambient animation opt-in too", () => {
+    // tds-shared's base.css clamps `animation-iteration-count: 1` and a 0.01ms
+    // duration on `*` under `reduce`. That clamp is built for entrance
+    // animations, whose end state IS the resting state — it does NOT switch a
+    // loop off. A loop declared outside the opt-in block runs once, instantly,
+    // and freezes on its final keyframe, which is the one reduced-motion failure
+    // an audit never looks for.
+    for (const name of ["auth-art-drift", "auth-art-orbit", "auth-art-pulse", "auth-art-sway"]) {
+      expect(noPreferenceBlock, `${name} must sit inside the opt-in block`).toContain(name);
+    }
+    expect(globalCss.replace(noPreferenceBlock, "")).not.toMatch(/animation:[^;]*infinite/);
+  });
+
+  it("wires the artwork's motion variables end to end", () => {
+    // A mistyped custom property is invalid at computed-value time: the whole
+    // `transform` computes to `none`, the shape simply never moves, and nothing
+    // is logged. Checked in both directions — a variable declared and never read
+    // is dead weight the next reader will trust.
+    const declared = new Set([...artwork.matchAll(/"(--auth-[a-z-]+)"/g)].map((m) => m[1]!));
+    const used = new Set([...globalCss.matchAll(/var\((--auth-[a-z-]+)/g)].map((m) => m[1]!));
+    expect([...used].filter((name) => !declared.has(name))).toEqual([]);
+    expect([...declared].filter((name) => !used.has(name))).toEqual([]);
+  });
+
+  it("sizes the blur filter region in user space, not against the bbox", () => {
+    // A percentage region is a fraction of the path's GEOMETRIC bbox (strokes
+    // excluded). A nearly flat ribbon has almost none, so at these blur radii the
+    // filter is clipped into a hard straight edge across the panel.
+    expect(artwork).toMatch(/filterUnits="userSpaceOnUse"/);
+  });
+
+  it("keeps the tilt on a group INSIDE the animated one", () => {
+    // A CSS transform animation on the tilt group would override the SVG
+    // presentation attribute outright (author CSS always wins) and the tilt would
+    // vanish for the whole animation, with no error.
+    expect(artwork.indexOf("auth-art__sway")).toBeLessThan(artwork.indexOf("transform={`rotate("));
+  });
+
+  it("keeps the screen blend the composition is built on", () => {
+    // Overlapping ribbons read as light rather than as stacked paint only under
+    // `screen`; without it the panel goes muddy and the palette stops working.
+    expect(globalCss).toMatch(/mix-blend-mode:\s*screen/);
   });
 
   it("keeps the theme bootstrap as a raw inline script", () => {

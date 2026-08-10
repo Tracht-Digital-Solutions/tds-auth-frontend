@@ -96,10 +96,61 @@
 }
 
 /* Fade the composition in once it exists. Without this the shapes appear a
-   frame after paint, which reads as a glitch rather than as loading. */
+   frame after paint, which reads as a glitch rather than as loading.
+
+   The ambient loops below live in the SAME block, and that placement is
+   load-bearing. tds-shared's base.css clamps `animation-duration: 0.01ms` and
+   `animation-iteration-count: 1` on `*` under `reduce`. That clamp is built for
+   entrance animations, whose end state IS the resting state. A LOOP left outside
+   this opt-in block is therefore not switched off by it — it runs once in 0.01ms
+   and FREEZES on its final keyframe. Every set below additionally has
+   `0% == 100% ==` the static composition, so even that failure mode lands
+   somewhere correct.
+
+   The seeded per-shape values arrive as inline custom properties from
+   LoginArtwork.tsx. Inside `@keyframes`, a `var()` in a `transform` is
+   substituted at computed-value time and is then CONSTANT for that element — the
+   transform components interpolate, the variable does not. That is exactly what
+   lets one rule drive seven differently-moving ribbons.
+
+   `auth-art-in` runs on the <svg>; the loops run on descendant groups. Different
+   elements, so the `animation` shorthands never clobber one another.
+
+   `will-change` is deliberately absent. It would promote 4–7 ribbons to their own
+   compositor layers underneath an element carrying `mix-blend-mode: screen` —
+   precisely where engines have historically fallen off the blend fast path — for
+   several MB each. The dominant cost here is the Gaussian, and the static
+   filtered child inside each moving wrapper is what addresses that. */
 @media (prefers-reduced-motion: no-preference) {
   .auth-art__canvas {
     animation: auth-art-in var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out) both;
+  }
+
+  /* Pivot everything on the canvas centre (50,50) — the same point the tilt
+     rotates about, so the two compose without shifting the composition
+     off-centre. Both declared explicitly rather than left to an initial value. */
+  .auth-art__sway,
+  .auth-art__ribbon,
+  .auth-art__ring {
+    transform-box: view-box;
+    transform-origin: 50% 50%;
+  }
+
+  .auth-art__sway {
+    animation: auth-art-sway var(--auth-sway-dur, 120s) var(--tds-ease-in-out, ease-in-out)
+      infinite;
+  }
+  .auth-art__ribbon {
+    animation: auth-art-drift var(--auth-dur, 45s) var(--tds-ease-in-out, ease-in-out)
+      var(--auth-delay, 0s) infinite;
+  }
+  .auth-art__ring {
+    animation: auth-art-orbit var(--auth-dur, 90s) var(--tds-ease-in-out, ease-in-out)
+      var(--auth-delay, 0s) infinite;
+  }
+  .auth-art__spark {
+    animation: auth-art-pulse var(--auth-dur, 10s) var(--tds-ease-in-out, ease-in-out)
+      var(--auth-delay, 0s) infinite;
   }
 }
 @keyframes auth-art-in {
@@ -110,6 +161,55 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Every frame lists the SAME transform functions in the SAME order — a differing
+   list forces matrix decomposition instead of component-wise interpolation.
+   Every fallback is the identity value on purpose: a mistyped custom property
+   makes the whole declaration invalid at computed-value time, which computes to
+   `none` with nothing logged. static-posture.test.ts cross-checks the names
+   against LoginArtwork.tsx in both directions. */
+@keyframes auth-art-drift {
+  0%,
+  100% {
+    transform: translate(0px, 0px) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate(var(--auth-dx, 0px), var(--auth-dy, 0px))
+      rotate(var(--auth-rot, 0deg)) scale(var(--auth-scale, 1));
+  }
+}
+@keyframes auth-art-orbit {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(var(--auth-rot, 0deg));
+  }
+}
+@keyframes auth-art-pulse {
+  0%,
+  100% {
+    opacity: var(--auth-o, 1);
+  }
+  50% {
+    opacity: var(--auth-o-low, 1);
+  }
+}
+/* Four degrees of travel per round trip, resting at 0 at both ends so the loop's
+   seam is the static composition. */
+@keyframes auth-art-sway {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(var(--auth-sway, 2deg));
+  }
+  75% {
+    transform: rotate(calc(-1 * var(--auth-sway, 2deg)));
   }
 }
 

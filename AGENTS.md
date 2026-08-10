@@ -86,6 +86,57 @@ in one place.
     theme for free instead of needing a second palette.
   - `mix-blend-mode: screen` on the SVG is load-bearing: it is what makes overlapping
     ribbons read as light rather than as stacked paint.
+  - **The ribbons are soft on purpose and the rings/sparks are sharp on purpose.**
+    `BLUR_LEVELS` (5/10/17) turns the ribbons into diffuse colour clouds; the crisp
+    rings and dots on top are the depth contrast and the place the eye lands. Keep the
+    largest radius **≤ 20** — it is what sizes the filter region (below).
+  - **Softer means DIMMER, not brighter** (`BLUR_ALPHA`). The intuition runs the other
+    way: a wide Gaussian lowers a ribbon's peak, so it looks like it needs more ink.
+    Measured, that is backwards — `screen` accumulates over *coverage*, and at radius 17
+    one ribbon covers most of the canvas, so five of them lift the whole field instead
+    of crossing in a few bright places. Compensating the peak took the panel's mean
+    luminance from 44 to 59 and turned the dark half of the split into a pink wash.
+    Judge any change to the blur or alpha ranges by **measuring mean luminance over
+    several loads**, not by looking at one composition: every visit is a different seed,
+    so one picture cannot tell "this build is too bright" from "that seed was".
+  - **The blur filter region is `userSpaceOnUse`, not percentages.** A percentage region
+    is a fraction of the path's *geometric* bbox — strokes excluded — and a nearly flat
+    ribbon has almost no bbox height while its stroke is up to 24 wide. At these radii
+    that clips the blur into a hard straight cut-off across the panel.
+
+- **The composition drifts, and every part of that is deliberate.**
+  - **The motion is seeded too.** Drift offsets, periods, phase and direction all come
+    out of `generateArtwork`, not out of `Math.random()` in the component — otherwise a
+    composition is only half reproducible from its number and the sweep has nothing to
+    bound. "Barely noticeable" is a requirement, and a requirement that is not a number
+    cannot be tested; `artwork.test.ts` pins the amplitudes and periods.
+  - **The loops are opt-in under `no-preference`, and that is not decoration.**
+    tds-shared's `base.css` clamps `animation-duration: 0.01ms` and
+    `animation-iteration-count: 1` on `*` under `reduce`. That clamp is built for
+    *entrance* animations, whose end state is the resting state. A **loop** left outside
+    the opt-in block is therefore **not switched off** by it — it runs once, instantly,
+    and freezes on its final keyframe. Every ambient keyframe set additionally has
+    `0% == 100% ==` the static composition, so even that failure mode lands somewhere
+    correct.
+  - **The tilt stays an SVG attribute on a group INSIDE the animated sway group.** A CSS
+    transform animation on the tilt group would override the presentation attribute
+    outright (author CSS always wins) and the tilt would vanish, with no error.
+  - **Each ribbon `<path>` sits in its own static wrapper `<g>`; the wrapper is what
+    moves.** The filter stays on the motionless child, so the Gaussian is a candidate for
+    a cached raster rather than a per-frame recompute. Don't "simplify" this by animating
+    the path directly. `will-change` is deliberately absent: it would promote 4–7 layers
+    underneath a `mix-blend-mode: screen` element, which is where engines fall off the
+    blend fast path, and the Gaussian is the real cost anyway.
+  - **Seeded values reach CSS as inline custom properties** read by shared `@keyframes`.
+    Inside `@keyframes`, a `var()` in a `transform` is substituted at computed-value time
+    and is then constant for that element — which is what lets one rule drive seven
+    differently-moving ribbons. A mistyped name makes the whole declaration invalid, so
+    the shape simply never moves, silently; `static-posture.test.ts` cross-checks the
+    names against `global.css` in both directions, and every `var()` carries an identity
+    fallback.
+  - The `opacity` presentation attribute on the sparks **stays** even though a keyframe
+    animates it: under `reduce` no keyframe applies, so the attribute *is* the rendering,
+    and the resting state matches the old static composition by construction.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
@@ -147,12 +198,19 @@ in one place.
   resolves, opacities strictly between 0 and 1, ribbons overhanging both edges so no
   stroke cap shows), the same seed always produces the same frame, and 300 seeds produce
   300 distinct ones — a PRNG wired up wrongly still passes the first two checks and
-  renders the identical picture forever.
+  renders the identical picture forever. It also bounds the **motion**: drift amplitudes
+  and periods, a negative-but-sub-cycle phase on every shape, counter-rotating rings, and
+  the alpha ceiling that keeps `screen` from washing the panel out. Those numbers are how
+  "ambient, not animated" is enforced — a five-second cycle passes every other check here.
 - **`tests/static-posture.test.ts`** — the AGENTS.md traps that fail *silently* (build stays
   green, production quietly breaks): noindex meta + `Disallow: /` + no sitemap, Tailwind via
   `@tailwindcss/postcss`, Fontsource as JS imports, the `tdsViteBuild` spread. It reads the
   source files, so negative assertions run against comment-stripped config — the configs
-  *document* these traps in prose and a naive match would fire on the warning text.
+  *document* these traps in prose and a naive match would fire on the warning text. For the
+  artwork it pins the reduced-motion gate (every looping keyframe inside the opt-in block,
+  none outside it), the `--auth-*` custom properties agreeing between `LoginArtwork.tsx`
+  and `global.css` in both directions, the user-space filter region, the tilt group nesting
+  and the `screen` blend.
 
 Two testing gotchas worth knowing before you extend them:
 

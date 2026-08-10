@@ -1,5 +1,67 @@
-import { useEffect, useState } from "react";
-import { BLUR_LEVELS, VIEWBOX, generateArtwork, randomSeed, type Artwork } from "~/lib/artwork";
+import { useEffect, useState, type CSSProperties } from "react";
+import {
+  BLUR_LEVELS,
+  VIEWBOX,
+  generateArtwork,
+  randomSeed,
+  type Artwork,
+  type Drift,
+  type Orbit,
+  type Pulse,
+} from "~/lib/artwork";
+
+/**
+ * `CSSProperties` has no index signature on purpose, so custom properties need
+ * a widened type. An intersection rather than an `as CSSProperties` cast at each
+ * call site: the cast would also swallow a typo in a *real* property name.
+ */
+type ArtStyle = CSSProperties & Record<`--${string}`, string>;
+
+/*
+ * Units live here, not in the generator — it emits plain numbers.
+ *
+ * `px` inside an SVG element's transform is ONE USER UNIT, so the drift is
+ * expressed in viewBox coordinates and scales with the panel, which is what we
+ * want. A unitless number in `translate()` is invalid CSS, and because these
+ * arrive through `var()` substitution it would take the entire `transform`
+ * declaration down with it — silently, with the shape simply never moving.
+ */
+const driftVars = (m: Drift): ArtStyle => ({
+  "--auth-dx": `${m.dx}px`,
+  "--auth-dy": `${m.dy}px`,
+  "--auth-rot": `${m.rot}deg`,
+  "--auth-scale": `${m.scale}`,
+  "--auth-dur": `${m.dur}s`,
+  "--auth-delay": `${m.delay}s`,
+});
+
+const orbitVars = (m: Orbit): ArtStyle => ({
+  "--auth-rot": `${m.rot}deg`,
+  "--auth-dur": `${m.dur}s`,
+  "--auth-delay": `${m.delay}s`,
+});
+
+/**
+ * The dimmed end is precomputed rather than written as a `calc()` in the
+ * keyframes, so 0% and 100% can be the resting opacity EXACTLY — the loop has to
+ * rest where the static composition sits.
+ */
+const pulseVars = (opacity: number, m: Pulse): ArtStyle => ({
+  "--auth-o": `${opacity}`,
+  "--auth-o-low": `${Math.round(opacity * m.dim * 1000) / 1000}`,
+  "--auth-dur": `${m.dur}s`,
+  "--auth-delay": `${m.delay}s`,
+});
+
+/**
+ * Deliberately NOT `--auth-dur`: custom properties inherit, and a name shared
+ * with the descendants would be a trap for any shape that ever forgets to set
+ * its own.
+ */
+const swayVars = (sway: Artwork["sway"]): ArtStyle => ({
+  "--auth-sway": `${sway.deg}deg`,
+  "--auth-sway-dur": `${sway.dur}s`,
+});
 
 /**
  * Renders the generated composition beside the login form.
@@ -39,55 +101,92 @@ export default function LoginArtwork() {
     >
       <defs>
         {BLUR_LEVELS.map((radius, i) => (
-          <filter key={i} id={`auth-art-blur-${i}`} x="-30%" y="-30%" width="160%" height="160%">
+          <filter
+            key={i}
+            id={`auth-art-blur-${i}`}
+            // USER SPACE, not the default objectBoundingBox. A percentage region
+            // is a fraction of the path's GEOMETRIC bbox — strokes excluded — and
+            // a nearly flat ribbon has almost no bbox height while its stroke is
+            // up to 24 wide. At these radii that clips the blur into a hard,
+            // straight cut-off across the panel. These numbers are viewBox units:
+            // the visible crop lives inside [0,100], so a 30-unit margin covers
+            // the tilt, the sway, the drift and the entrance scale with room left.
+            filterUnits="userSpaceOnUse"
+            x={-30}
+            y={-30}
+            width={160}
+            height={160}
+          >
             <feGaussianBlur stdDeviation={radius} />
           </filter>
         ))}
       </defs>
 
-      {/* One rotation for the whole composition: cheaper than re-deriving every
-          coordinate, and it varies the read of an otherwise similar layout. */}
-      <g transform={`rotate(${art.tilt} ${VIEWBOX / 2} ${VIEWBOX / 2})`}>
-        <g className="auth-art__ribbons">
-          {art.ribbons.map((ribbon, i) => (
-            <path
+      {/* The sway group is animated and carries NO transform attribute of its
+          own. Putting the CSS animation on the tilt group below would override
+          that presentation attribute outright — author CSS always wins — and the
+          tilt would silently disappear for the whole animation. Two rotations
+          about the same point commute, so nesting them costs nothing. */}
+      <g className="auth-art__sway" style={swayVars(art.sway)}>
+        {/* One rotation for the whole composition: cheaper than re-deriving every
+            coordinate, and it varies the read of an otherwise similar layout. */}
+        <g transform={`rotate(${art.tilt} ${VIEWBOX / 2} ${VIEWBOX / 2})`}>
+          <g className="auth-art__ribbons">
+            {art.ribbons.map((ribbon, i) => (
+              // The WRAPPER drifts; the filtered <path> inside it never moves.
+              // An SVG filter on the very element being transformed is the case
+              // engines are least likely to cache, and at radius 17 that would be
+              // a full Gaussian per ribbon per frame. Don't "simplify" this by
+              // animating the path directly.
+              <g key={i} className="auth-art__ribbon" style={driftVars(ribbon.motion)}>
+                <path
+                  d={ribbon.d}
+                  fill="none"
+                  stroke={ribbon.hue}
+                  strokeWidth={ribbon.width}
+                  strokeLinecap="round"
+                  opacity={ribbon.opacity}
+                  filter={`url(#auth-art-blur-${ribbon.blur})`}
+                />
+              </g>
+            ))}
+          </g>
+
+          {/* Thin rings and crisp dots are what keep the blurred ribbons from
+              reading as a smear — structure first, then somewhere to look.
+              Both stay sharp: the contrast against the soft ribbons is the depth. */}
+          {art.rings.map((ring, i) => (
+            <circle
               key={i}
-              d={ribbon.d}
+              className="auth-art__ring"
+              style={orbitVars(ring.motion)}
+              cx={ring.cx}
+              cy={ring.cy}
+              r={ring.r}
               fill="none"
-              stroke={ribbon.hue}
-              strokeWidth={ribbon.width}
-              strokeLinecap="round"
-              opacity={ribbon.opacity}
-              filter={`url(#auth-art-blur-${ribbon.blur})`}
+              stroke={ring.hue}
+              strokeWidth={0.35}
+              opacity={ring.opacity}
+            />
+          ))}
+
+          {art.sparks.map((spark, i) => (
+            <circle
+              key={i}
+              className="auth-art__spark"
+              style={pulseVars(spark.opacity, spark.motion)}
+              cx={spark.cx}
+              cy={spark.cy}
+              r={spark.r}
+              fill={spark.hue}
+              // KEEP the attribute: under `prefers-reduced-motion: reduce` no
+              // keyframe applies, so this IS the rendering. The resting state is
+              // then identical to the old static composition by construction,
+              // rather than by a second rule someone has to remember.
+              opacity={spark.opacity}
             />
           ))}
         </g>
-
-        {/* Thin rings and crisp dots are what keep the blurred ribbons from
-            reading as a smear — structure first, then somewhere to look. */}
-        {art.rings.map((ring, i) => (
-          <circle
-            key={i}
-            cx={ring.cx}
-            cy={ring.cy}
-            r={ring.r}
-            fill="none"
-            stroke={ring.hue}
-            strokeWidth={0.35}
-            opacity={ring.opacity}
-          />
-        ))}
-
-        {art.sparks.map((spark, i) => (
-          <circle
-            key={i}
-            cx={spark.cx}
-            cy={spark.cy}
-            r={spark.r}
-            fill={spark.hue}
-            opacity={spark.opacity}
-          />
-        ))}
       </g>
     </svg>
   );

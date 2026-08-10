@@ -173,4 +173,107 @@ describe("every composition is well-formed", () => {
       expect(Math.abs(art.tilt), `seed ${seed}`).toBeLessThanOrEqual(18);
     }
   });
+
+  it("keeps the blur radii inside the filter region the component declares", () => {
+    // LoginArtwork.tsx sizes its userSpaceOnUse region at -30 / 160 user units.
+    // A radius past ~20 pushes the Gaussian's support beyond that margin and the
+    // ribbon gets a hard, straight cut-off that nothing reports.
+    expect([...BLUR_LEVELS]).toEqual([...BLUR_LEVELS].sort((a, b) => a - b));
+    expect(Math.max(...BLUR_LEVELS)).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("the motion is ambient, not animated", () => {
+  // These bounds ARE the requirement. "Barely noticeable" is the whole point of
+  // the drift — a five-second cycle or a twenty-unit sweep would pass every
+  // other test in this file and still be wrong, because the artwork sits beside
+  // a login form and must not pull the eye off it.
+
+  it("drifts slowly and by very little", () => {
+    for (const seed of SEEDS) {
+      for (const { motion: m } of generateArtwork(seed).ribbons) {
+        expect(Math.abs(m.dx), `seed ${seed}`).toBeLessThanOrEqual(8);
+        expect(Math.abs(m.dy), `seed ${seed}`).toBeLessThanOrEqual(6);
+        expect(Math.abs(m.rot), `seed ${seed}`).toBeLessThanOrEqual(2);
+        // Never below 1: the composition breathes outward only, so a ribbon's
+        // over-hang can never be pulled inside the frame.
+        expect(m.scale, `seed ${seed}`).toBeGreaterThanOrEqual(1);
+        expect(m.scale, `seed ${seed}`).toBeLessThanOrEqual(1.04);
+        expect(m.dur, `seed ${seed}`).toBeGreaterThanOrEqual(30);
+        expect(m.dur, `seed ${seed}`).toBeLessThanOrEqual(60);
+      }
+    }
+  });
+
+  it("starts every shape mid-cycle", () => {
+    // A zero delay everywhere makes the whole composition swell in unison,
+    // which is what turns ambient drift back into "an animation". A delay of a
+    // full period is phase-equivalent to no delay at all, so the bound is strict.
+    for (const seed of SEEDS) {
+      const art = generateArtwork(seed);
+      const motions = [
+        ...art.ribbons.map((x) => x.motion),
+        ...art.rings.map((x) => x.motion),
+        ...art.sparks.map((x) => x.motion),
+      ];
+      for (const m of motions) {
+        expect(m.delay, `seed ${seed}`).toBeLessThanOrEqual(0);
+        expect(m.delay, `seed ${seed}`).toBeGreaterThan(-m.dur);
+      }
+    }
+  });
+
+  it("counter-rotates adjacent rings", () => {
+    // Every ring turning the same way reads as the whole picture rotating —
+    // and that motion already belongs to the sway group.
+    for (const seed of SEEDS) {
+      const rings = generateArtwork(seed).rings;
+      expect(Math.sign(rings[0]!.motion.rot), `seed ${seed}`).not.toBe(
+        Math.sign(rings[1]!.motion.rot),
+      );
+    }
+  });
+
+  it("keeps every period long enough to read as drift", () => {
+    for (const seed of SEEDS) {
+      const art = generateArtwork(seed);
+      const periods = [
+        ...art.ribbons.map((x) => x.motion.dur),
+        ...art.rings.map((x) => x.motion.dur),
+        ...art.sparks.map((x) => x.motion.dur),
+        art.sway.dur,
+      ];
+      for (const period of periods) {
+        expect(Number.isFinite(period), `seed ${seed}`).toBe(true);
+        expect(period, `seed ${seed}`).toBeGreaterThanOrEqual(6);
+      }
+    }
+  });
+
+  it("dims sparks without extinguishing them", () => {
+    for (const seed of SEEDS) {
+      for (const spark of generateArtwork(seed).sparks) {
+        expect(spark.motion.dim, `seed ${seed}`).toBeGreaterThanOrEqual(0.6);
+        expect(spark.motion.dim, `seed ${seed}`).toBeLessThan(1);
+      }
+    }
+  });
+
+  it("sways the whole composition by a couple of degrees at most", () => {
+    for (const seed of SEEDS) {
+      const { sway } = generateArtwork(seed);
+      expect(Math.abs(sway.deg), `seed ${seed}`).toBeLessThanOrEqual(2);
+      expect(sway.deg, `seed ${seed}`).not.toBe(0);
+    }
+  });
+
+  it("keeps ribbon alpha under the screen-blend ceiling", () => {
+    // The per-bucket blur compensation multiplies the base draw; without the
+    // clamp the softest bucket reaches 0.9 and `screen` washes the panel out.
+    for (const seed of SEEDS) {
+      for (const ribbon of generateArtwork(seed).ribbons) {
+        expect(ribbon.opacity, `seed ${seed}`).toBeLessThanOrEqual(0.88);
+      }
+    }
+  });
 });
