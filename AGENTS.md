@@ -122,11 +122,15 @@ in one place.
     transform animation on the tilt group would override the presentation attribute
     outright (author CSS always wins) and the tilt would vanish, with no error.
   - **Each ribbon `<path>` sits in its own static wrapper `<g>`; the wrapper is what
-    moves.** The filter stays on the motionless child, so the Gaussian is a candidate for
-    a cached raster rather than a per-frame recompute. Don't "simplify" this by animating
-    the path directly. `will-change` is deliberately absent: it would promote 4–7 layers
-    underneath a `mix-blend-mode: screen` element, which is where engines fall off the
-    blend fast path, and the Gaussian is the real cost anyway.
+    moves.** The filter stays on the motionless child, so the Gaussian is a cached raster
+    rather than a per-frame recompute. Don't "simplify" this by animating the path
+    directly. Measured in Chrome against the built `dist/`: a flat 60 fps with **zero**
+    frames over 32 ms at 1×, 4× and 6× CPU throttling (the same harness drops to 30 fps
+    at 20×, so it does detect load). `will-change` is therefore deliberately absent —
+    it would promote 4–7 layers underneath a `mix-blend-mode: screen` element, which is
+    where engines fall off the blend fast path, for no measured gain. Not covered by that
+    measurement: a weak **GPU** (CPU throttling doesn't emulate one) and **Firefox**,
+    whose SVG filters are not always GPU-side.
   - **Seeded values reach CSS as inline custom properties** read by shared `@keyframes`.
     Inside `@keyframes`, a `var()` in a `transform` is substituted at computed-value time
     and is then constant for that element — which is what lets one rule drive seven
