@@ -108,14 +108,20 @@ export default function LoginArtwork() {
             // is a fraction of the path's GEOMETRIC bbox — strokes excluded — and
             // a nearly flat ribbon has almost no bbox height while its stroke is
             // up to 24 wide. At these radii that clips the blur into a hard,
-            // straight cut-off across the panel. These numbers are viewBox units:
-            // the visible crop lives inside [0,100], so a 30-unit margin covers
-            // the tilt, the sway, the drift and the entrance scale with room left.
+            // straight cut-off across the panel.
+            //
+            // These numbers are viewBox units, and the margin is not cosmetic: the
+            // region clips the filter's INPUT as well as its output, so a pixel
+            // just inside the visible crop must still be able to reach every
+            // source pixel within ~3σ (51 units at the widest blur). Ribbons now
+            // run OVERHANG=45 past each edge plus half a 24-wide stroke, so a
+            // 70-unit margin is what keeps the left- and right-most visible
+            // columns from quietly losing part of their colour.
             filterUnits="userSpaceOnUse"
-            x={-30}
-            y={-30}
-            width={160}
-            height={160}
+            x={-70}
+            y={-70}
+            width={240}
+            height={240}
           >
             <feGaussianBlur stdDeviation={radius} />
           </filter>

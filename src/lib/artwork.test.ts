@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BLUR_LEVELS,
+  OVERHANG,
   PALETTE,
   VIEWBOX,
   generateArtwork,
@@ -141,11 +142,14 @@ describe("every composition is well-formed", () => {
 
   it("overhangs both edges with every ribbon", () => {
     // A stroke that ends inside the frame shows its round cap, which reads as a
-    // rendering fault rather than as a design choice.
+    // rendering fault rather than as a design choice. The overhang has to clear
+    // the drift AND the rotations: a tilt about the canvas centre swings the end
+    // of a high or low ribbon *inward*, which is why OVERHANG is far larger than
+    // the drift amplitude alone would suggest.
     for (const seed of SEEDS) {
       for (const ribbon of generateArtwork(seed).ribbons) {
-        expect(ribbon.d.startsWith("M -20 "), `seed ${seed}`).toBe(true);
-        expect(ribbon.d).toContain(", 120 ");
+        expect(ribbon.d.startsWith(`M ${-OVERHANG} `), `seed ${seed}`).toBe(true);
+        expect(ribbon.d, `seed ${seed}`).toContain(`, ${VIEWBOX + OVERHANG} `);
       }
     }
   });
@@ -175,32 +179,35 @@ describe("every composition is well-formed", () => {
   });
 
   it("keeps the blur radii inside the filter region the component declares", () => {
-    // LoginArtwork.tsx sizes its userSpaceOnUse region at -30 / 160 user units.
-    // A radius past ~20 pushes the Gaussian's support beyond that margin and the
-    // ribbon gets a hard, straight cut-off that nothing reports.
+    // LoginArtwork.tsx sizes its userSpaceOnUse region from the largest radius
+    // here. Past ~20 the Gaussian's support outruns that margin and the ribbon
+    // gets a hard, straight cut-off that nothing reports.
     expect([...BLUR_LEVELS]).toEqual([...BLUR_LEVELS].sort((a, b) => a - b));
     expect(Math.max(...BLUR_LEVELS)).toBeLessThanOrEqual(20);
   });
 });
 
 describe("the motion is ambient, not animated", () => {
-  // These bounds ARE the requirement. "Barely noticeable" is the whole point of
-  // the drift — a five-second cycle or a twenty-unit sweep would pass every
-  // other test in this file and still be wrong, because the artwork sits beside
-  // a login form and must not pull the eye off it.
+  // These bounds ARE the requirement. The composition should read as clearly
+  // alive but never as a running animation — a five-second cycle or a
+  // thirty-unit sweep would pass every other test in this file and still be
+  // wrong, because the artwork sits beside a login form and must not pull the
+  // eye off it. The upper bounds are also a geometry contract: OVERHANG is
+  // sized against them, so raising a drift amplitude without re-checking it
+  // starts showing stroke caps.
 
   it("drifts slowly and by very little", () => {
     for (const seed of SEEDS) {
       for (const { motion: m } of generateArtwork(seed).ribbons) {
-        expect(Math.abs(m.dx), `seed ${seed}`).toBeLessThanOrEqual(8);
-        expect(Math.abs(m.dy), `seed ${seed}`).toBeLessThanOrEqual(6);
-        expect(Math.abs(m.rot), `seed ${seed}`).toBeLessThanOrEqual(2);
+        expect(Math.abs(m.dx), `seed ${seed}`).toBeLessThanOrEqual(14);
+        expect(Math.abs(m.dy), `seed ${seed}`).toBeLessThanOrEqual(11);
+        expect(Math.abs(m.rot), `seed ${seed}`).toBeLessThanOrEqual(3.5);
         // Never below 1: the composition breathes outward only, so a ribbon's
         // over-hang can never be pulled inside the frame.
         expect(m.scale, `seed ${seed}`).toBeGreaterThanOrEqual(1);
-        expect(m.scale, `seed ${seed}`).toBeLessThanOrEqual(1.04);
-        expect(m.dur, `seed ${seed}`).toBeGreaterThanOrEqual(30);
-        expect(m.dur, `seed ${seed}`).toBeLessThanOrEqual(60);
+        expect(m.scale, `seed ${seed}`).toBeLessThanOrEqual(1.06);
+        expect(m.dur, `seed ${seed}`).toBeGreaterThanOrEqual(20);
+        expect(m.dur, `seed ${seed}`).toBeLessThanOrEqual(38);
       }
     }
   });
@@ -245,7 +252,7 @@ describe("the motion is ambient, not animated", () => {
       ];
       for (const period of periods) {
         expect(Number.isFinite(period), `seed ${seed}`).toBe(true);
-        expect(period, `seed ${seed}`).toBeGreaterThanOrEqual(6);
+        expect(period, `seed ${seed}`).toBeGreaterThanOrEqual(5);
       }
     }
   });
@@ -253,7 +260,7 @@ describe("the motion is ambient, not animated", () => {
   it("dims sparks without extinguishing them", () => {
     for (const seed of SEEDS) {
       for (const spark of generateArtwork(seed).sparks) {
-        expect(spark.motion.dim, `seed ${seed}`).toBeGreaterThanOrEqual(0.6);
+        expect(spark.motion.dim, `seed ${seed}`).toBeGreaterThanOrEqual(0.45);
         expect(spark.motion.dim, `seed ${seed}`).toBeLessThan(1);
       }
     }
@@ -262,7 +269,7 @@ describe("the motion is ambient, not animated", () => {
   it("sways the whole composition by a couple of degrees at most", () => {
     for (const seed of SEEDS) {
       const { sway } = generateArtwork(seed);
-      expect(Math.abs(sway.deg), `seed ${seed}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(sway.deg), `seed ${seed}`).toBeLessThanOrEqual(3);
       expect(sway.deg, `seed ${seed}`).not.toBe(0);
     }
   });

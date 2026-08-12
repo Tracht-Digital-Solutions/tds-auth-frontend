@@ -102,14 +102,25 @@ in one place.
   - **The blur filter region is `userSpaceOnUse`, not percentages.** A percentage region
     is a fraction of the path's *geometric* bbox — strokes excluded — and a nearly flat
     ribbon has almost no bbox height while its stroke is up to 24 wide. At these radii
-    that clips the blur into a hard straight cut-off across the panel.
+    that clips the blur into a hard straight cut-off across the panel. The region also
+    clips the filter's **input**, not just its output, so its margin has to let a pixel
+    just inside the visible crop still reach every source pixel within ~3σ (51 units at
+    the widest blur) — otherwise the outermost visible columns quietly lose part of
+    their colour. It is sized from `OVERHANG` + half a stroke + 3σ.
 
 - **The composition drifts, and every part of that is deliberate.**
   - **The motion is seeded too.** Drift offsets, periods, phase and direction all come
     out of `generateArtwork`, not out of `Math.random()` in the component — otherwise a
     composition is only half reproducible from its number and the sweep has nothing to
-    bound. "Barely noticeable" is a requirement, and a requirement that is not a number
-    cannot be tested; `artwork.test.ts` pins the amplitudes and periods.
+    bound. "Alive but not distracting" is a requirement, and a requirement that is not a
+    number cannot be tested; `artwork.test.ts` pins the amplitudes and periods.
+  - **`OVERHANG` is sized against the motion bounds, so the two move together.** Ribbons
+    run past both edges so no round stroke cap is ever visible. The trap is that the
+    limiting case is not the drift — it is *rotation*: a tilt about the canvas centre
+    swings the ends of a high or low ribbon **inward**, and at the original 20 units a
+    ribbon starting near `y=5` could put its cap at roughly `x=5`, which the panel does
+    show. Raising a drift amplitude means re-checking `OVERHANG` against the worst
+    combination of tilt + sway + per-ribbon rotation, not just against the translation.
   - **The loops are opt-in under `no-preference`, and that is not decoration.**
     tds-shared's `base.css` clamps `animation-duration: 0.01ms` and
     `animation-iteration-count: 1` on `*` under `reduce`. That clamp is built for

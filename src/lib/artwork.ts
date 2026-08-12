@@ -20,6 +20,22 @@
 export const VIEWBOX = 100;
 
 /**
+ * How far every ribbon runs past both edges of the canvas.
+ *
+ * A stroke that ends inside the frame shows its round cap, which reads as a
+ * rendering fault rather than as a design choice — so both ends have to stay
+ * outside the crop no matter what happens to them afterwards. "Afterwards" is
+ * the part worth spelling out, because it is not just the crop: the whole
+ * composition is tilted by up to 18°, swayed by another 3°, and each ribbon
+ * drifts and rotates on top of that. A rotation about the canvas centre swings
+ * the ENDS furthest, and it swings the ends of a high or low ribbon *inward* —
+ * at 20 units of overhang a ribbon starting at y=5 could put its cap around
+ * x=5, which the panel does show. This is sized for the worst combination of
+ * all four, with margin.
+ */
+export const OVERHANG = 45;
+
+/**
  * Brand hues the composition may draw from. All six flip with the theme.
  * Kept to the categorical + brand tokens — no greys: the backdrop is already a
  * deep navy, and a grey ribbon on it reads as a rendering fault.
@@ -39,8 +55,8 @@ export const PALETTE = [
  * The motion is part of the composition, so it comes out of the generator and
  * not out of `Math.random()` in the component: a composition that is only half
  * reproducible from its seed is not reproducible at all, and the sweep in
- * `artwork.test.ts` would have nothing to bound. "Barely noticeable" is a
- * requirement, and a requirement that is not a number cannot be tested.
+ * `artwork.test.ts` would have nothing to bound. "Alive but not distracting" is
+ * a requirement, and a requirement that is not a number cannot be tested.
  *
  * Plain numbers, no units — the component serialises them into CSS custom
  * properties, the same way it turns `blur` into a `url(#…)`.
@@ -140,8 +156,8 @@ export interface Artwork {
  * Raised from [2.5, 5, 9]: the ribbons are meant to read as soft colour clouds,
  * with the rings and sparks left sharp — the contrast between the two is what
  * gives the composition its depth. The largest value is what sizes the filter
- * region in `LoginArtwork.tsx` (30 user units of margin); past ~20 the Gaussian's
- * support runs off that region and the ribbon gets a hard, straight cut-off.
+ * region in `LoginArtwork.tsx`; past ~20 the Gaussian's support outruns that
+ * region and the ribbon gets a hard, straight cut-off.
  */
 export const BLUR_LEVELS = [5, 10, 17] as const;
 
@@ -215,8 +231,8 @@ export function generateArtwork(seed: number): Artwork {
   const ribbonCount = Math.floor(between(4, 7.99));
   const ribbons: Ribbon[] = [];
   for (let i = 0; i < ribbonCount; i++) {
-    // Ribbons enter left and leave right, over-hanging by 20 units so no stroke
-    // end is ever visible inside the frame — a visible cap looks like a bug.
+    // Ribbons enter left and leave right, over-hanging by OVERHANG units at both
+    // ends so no stroke cap is ever visible inside the frame.
     const y0 = between(5, 95);
     const y1 = between(5, 95);
     const c1x = between(15, 45);
@@ -225,10 +241,12 @@ export function generateArtwork(seed: number): Artwork {
     const c2y = y1 + between(-45, 45);
     // Drawn before the literal because `opacity` is compensated against it.
     const blur = Math.floor(rng() * BLUR_LEVELS.length);
-    const dur = r(between(30, 60));
+    const dur = r(between(20, 38));
 
     ribbons.push({
-      d: `M -20 ${r(y0)} C ${r(c1x)} ${r(c1y)}, ${r(c2x)} ${r(c2y)}, 120 ${r(y1)}`,
+      d: `M ${-OVERHANG} ${r(y0)} C ${r(c1x)} ${r(c1y)}, ${r(c2x)} ${r(c2y)}, ${
+        VIEWBOX + OVERHANG
+      } ${r(y1)}`,
       hue: pick(hues),
       width: r(between(7, 24)),
       // Clamped below 0.88: `screen` over a near-black field turns anything
@@ -237,11 +255,11 @@ export function generateArtwork(seed: number): Artwork {
       opacity: r3(Math.min(0.88, between(0.34, 0.6) * BLUR_ALPHA[blur]!)),
       blur,
       motion: {
-        dx: r(signed(between(4, 8))),
-        dy: r(signed(between(3, 6))),
-        rot: r(signed(between(0.8, 2))),
-        // 3dp: 2dp would collapse the 1.01–1.035 band onto three values.
-        scale: r3(1 + between(0.01, 0.035)),
+        dx: r(signed(between(8, 14))),
+        dy: r(signed(between(6, 11))),
+        rot: r(signed(between(1.5, 3.5))),
+        // 3dp: 2dp would quantise this narrow band far too coarsely.
+        scale: r3(1 + between(0.02, 0.06)),
         dur,
         delay: phase(dur),
       },
@@ -251,7 +269,7 @@ export function generateArtwork(seed: number): Artwork {
   const ringCount = Math.floor(between(2, 4.99));
   const rings: Ring[] = [];
   for (let i = 0; i < ringCount; i++) {
-    const dur = r(between(70, 120));
+    const dur = r(between(45, 80));
 
     rings.push({
       cx: r(between(10, 90)),
@@ -262,7 +280,7 @@ export function generateArtwork(seed: number): Artwork {
       motion: {
         // Direction alternates by index rather than by a draw — counter-rotation
         // has to be guaranteed, not merely likely.
-        rot: r((i % 2 === 0 ? 1 : -1) * between(1.5, 3)),
+        rot: r((i % 2 === 0 ? 1 : -1) * between(3, 6)),
         dur,
         delay: phase(dur),
       },
@@ -272,7 +290,7 @@ export function generateArtwork(seed: number): Artwork {
   const sparkCount = Math.floor(between(2, 4.99));
   const sparks: Spark[] = [];
   for (let i = 0; i < sparkCount; i++) {
-    const dur = r(between(6, 14));
+    const dur = r(between(5, 11));
 
     sparks.push({
       cx: r(between(12, 88)),
@@ -281,7 +299,7 @@ export function generateArtwork(seed: number): Artwork {
       hue: pick(hues),
       opacity: r3(between(0.5, 0.9)),
       motion: {
-        dim: r3(between(0.62, 0.85)),
+        dim: r3(between(0.5, 0.78)),
         dur,
         delay: phase(dur),
       },
@@ -291,7 +309,7 @@ export function generateArtwork(seed: number): Artwork {
   return {
     seed,
     tilt: r(between(-18, 18)),
-    sway: { deg: signed(2), dur: r(between(100, 140)) },
+    sway: { deg: signed(3), dur: r(between(70, 100)) },
     ribbons,
     rings,
     sparks,
