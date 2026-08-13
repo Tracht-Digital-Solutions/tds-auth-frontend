@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { stubLocation, type StubbedLocation } from "~/test-support/location";
+import { TYPING_EVENT } from "~/lib/artworkSignal";
 
 /**
  * Behaviour tests for the central login island.
@@ -291,6 +292,38 @@ describe("login failures", () => {
     await userEvent.setup({ delay: null }).click(screen.getByRole("button"));
 
     await waitFor(() => expect(screen.queryByText("E-Mail oder Passwort ist falsch.")).toBeNull());
+  });
+});
+
+describe("the artwork signal", () => {
+  it("emits one signal per keystroke in both text fields", async () => {
+    // The artwork is a SEPARATE island — there is no shared state, only this
+    // event. A form that forgets to emit leaves the composition inert while
+    // someone types, with nothing logged and nothing to notice in review, so
+    // the emission is pinned here rather than in the artwork's own suite.
+    const seen = vi.fn();
+    window.addEventListener(TYPING_EVENT, seen);
+    await renderForm();
+    const user = userEvent.setup({ delay: null });
+
+    await user.type(screen.getByLabelText("E-Mail"), "abc");
+    await user.type(screen.getByLabelText("Passwort"), "de");
+    window.removeEventListener(TYPING_EVENT, seen);
+
+    expect(seen).toHaveBeenCalledTimes(5);
+  });
+
+  it("stays silent for the remember-me checkbox", async () => {
+    // Not a text field. Reacting to it would make the artwork answer a decision
+    // rather than a keystroke.
+    const seen = vi.fn();
+    await renderForm();
+    window.addEventListener(TYPING_EVENT, seen);
+
+    await userEvent.setup({ delay: null }).click(screen.getByLabelText("30 Tage angemeldet bleiben"));
+    window.removeEventListener(TYPING_EVENT, seen);
+
+    expect(seen).not.toHaveBeenCalled();
   });
 });
 

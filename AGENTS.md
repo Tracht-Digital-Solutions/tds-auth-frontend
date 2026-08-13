@@ -153,6 +153,81 @@ in one place.
     animates it: under `reduce` no keyframe applies, so the attribute *is* the rendering,
     and the resting state matches the old static composition by construction.
 
+- **The composition answers the pointer and the keyboard.** Three responses, three
+  mechanisms, all inert under `reduce`.
+  - **Pointer → parallax.** Every shape sits in a `.auth-art__follow` wrapper that
+    translates by its own seeded `depth`. Two things are assigned by LAYER rather than
+    drawn, because "depth that is merely likely is depth some seeds don't have": the
+    **sign** (ribbons and sparks lean toward the pointer, rings away — otherwise the
+    parallax reads as the whole picture being dragged) and the **band** (ribbons travel
+    least, sparks most, the three ranges **disjoint**). Ribbon depth is attenuated by its
+    blur bucket (`FOLLOW_BY_BLUR`) so the far, diffuse layer moves least — the same
+    physical story the blur already tells.
+  - **The easing is a rAF loop, NOT a CSS transition, and that is measured.** The obvious
+    implementation puts `transition: transform` on each wrapper. The pointer target moves
+    every frame, so the transition is *restarted* every frame on all fifteen shapes:
+    **49 fps against 59** for the identical transforms driven directly (Chrome, built
+    `dist/`, 6× CPU throttling). The transforms are nearly free; the transition
+    bookkeeping was the single most expensive thing on the page. So `LoginArtwork.tsx`
+    eases **three** positions — one per layer — and writes six custom properties on one
+    element per frame, which the shapes inherit via the `.auth-art__layer--*` bindings.
+    The consequence is that the lag is per LAYER, not per shape; nothing is lost, because
+    two neighbouring ribbons lagging differently is not something the eye can pick out.
+    `FOLLOW_EASE` holds **time constants** (`1 - exp(-dt/τ)`), so the response is the same
+    on a 60 Hz and a 144 Hz display — a fixed per-frame factor is not. `dt` is clamped
+    (`MAX_STEP_MS`) or a backgrounded tab teleports the composition on its first frame back.
+  - **The loop stops.** An exponential ease never arrives, so below `SETTLED` the value is
+    snapped to the target and the frame is not rescheduled — otherwise a decoration nobody
+    is pointing at holds a frame callback forever. Snapping also makes the resting state
+    *exactly* the composition a visitor who never moved the mouse sees.
+  - **`pointerType: "touch"` is ignored.** A finger dragging across the band leaves no
+    `pointerleave` behind, so the composition would stay parked wherever it lifted.
+  - **A zero-sized panel is ignored too.** jsdom, or a panel measured mid-layout, divides
+    to `NaN`; a `NaN` custom property makes the whole `transform` invalid at
+    computed-value time — every shape snaps to the origin, with nothing logged.
+  - **Hover brightens the structure and never the ribbons.** Ribbon alpha is the one knob
+    that washes the panel out under `screen` (see `BLUR_ALPHA`), so the ribbons answer with
+    movement only; the rings thicken and the sparks scale. Sparks answer with **scale**
+    rather than opacity because their opacity is already driven by `auth-art-pulse`, and a
+    running animation beats a transition outright — the declaration would be ignored with
+    nothing to show for it.
+  - **Typing → energy + a burst.** Each keystroke sets `--auth-energy` to 1 (decaying
+    ~900 ms after the last one), which makes the whole composition inhale, the sparks grow
+    and the glow light up; and it fires **one expanding ripple** from a fixed pool of three
+    seeded origins. The split is the point: a keystroke needs an answer inside a frame or
+    the feedback is not attributable to it, but a per-keystroke *ambient* change would
+    strobe while someone types a password. The ripple uses **Web Animations**, because a
+    keystroke has to be able to re-fire a burst that is still running and CSS gives you
+    that only by remounting the node (resetting its neighbours' ambient phase) or forcing
+    a reflow. It is `Element.animate` optional-called — jsdom implements none.
+  - **The typing signal crosses an island boundary** (`src/lib/artworkSignal.ts`): the
+    form and the artwork are separate React roots, so a `window` CustomEvent is the only
+    bus available — the same one tds-shared's toast host uses. It is an explicit
+    `signalTyping()` call from each field rather than a `document`-level `input` listener
+    in the artwork, so the artwork cannot react to things nobody decided it should (the
+    remember-me checkbox, anything added later) and the coupling stays greppable. **The
+    cost is that a new form must call it**; a form that forgets leaves the composition
+    inert with nothing logged, so every island suite asserts its own emission.
+  - **Reduced motion is gated in JS as well as CSS.** Two of the three responses are
+    imperative — the offsets are written straight onto the node and the bursts are Web
+    Animations — and a media query can stop neither. The component reads
+    `matchMedia("(prefers-reduced-motion: no-preference)")`, keeps it live, and simply
+    does not attach the handlers.
+  - **The cursor glow is a translated disc, not a re-authored gradient.** Moving a radial
+    gradient's `at` position repaints the whole panel every frame; moving the element is
+    composited. That is also why the component emits pixel offsets alongside the
+    normalised ones — a percentage in `translate()` resolves against the *element's* box,
+    not the panel's. It paints in **`--color-accent-pink`**, not `--color-accent`: the
+    panel is a fixed dark field while the tokens flip, and the accent's light value is a
+    deep burgundy that reads as a smudge over navy.
+  - **Measured cost of the whole thing** (Chrome, built `dist/`, 1440×900): 60 fps with no
+    long frames at 1× and 4× CPU throttling for both the pointer sweep and fast typing. At
+    **6×**, ambient-only holds 60 fps while a *continuously swept* pointer runs ~52 fps —
+    a real cost, though part of it is the CDP-driven sweep itself under the same throttle.
+    It degrades gracefully, and it never runs on touch. Panel mean luminance is unchanged
+    at rest (the glow is `opacity: 0` there) and rises by ~2 under hover/typing — well
+    inside the band `BLUR_ALPHA` documents.
+
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
 - **`@source` for the shared package, or its islands render unstyled.** The shared React
@@ -217,15 +292,34 @@ in one place.
   and periods, a negative-but-sub-cycle phase on every shape, counter-rotating rings, and
   the alpha ceiling that keeps `screen` from washing the panel out. Those numbers are how
   "ambient, not animated" is enforced — a five-second cycle passes every other check here.
+  The **parallax** is bounded the same way: the three depth bands stay disjoint and
+  correctly signed for every seed (that separation IS the depth cue), the ribbon travel
+  stays inside the margin `OVERHANG` was sized for, and the layer easings stay ordered.
+- **`src/lib/artworkSignal.test.ts`** — the form → artwork bus. Delivery, unsubscribe (a
+  handler that outlives its island is the same silence with a leak attached), that the
+  event carries **no payload** (a password field emits it too, so "just the length" is
+  still the wrong instinct), and that it no-ops without a `window`.
+- **`src/components/LoginArtwork.test.tsx`** — the interaction wiring, not the looks:
+  reduced motion gating the imperative half, a zero-sized panel not producing `NaN`, touch
+  being ignored, the ease converging *and stopping*, the far layer visibly trailing the
+  near one mid-flight, a resumed background tab not teleporting, and the typing energy
+  rising and decaying. Its rAF stub advances a **real clock** — the ease integrates over
+  elapsed time, so a stub that always passes `0` computes a zero delta and everything
+  "passes" while nothing moves.
 - **`tests/static-posture.test.ts`** — the AGENTS.md traps that fail *silently* (build stays
   green, production quietly breaks): noindex meta + `Disallow: /` + no sitemap, Tailwind via
   `@tailwindcss/postcss`, Fontsource as JS imports, the `tdsViteBuild` spread. It reads the
   source files, so negative assertions run against comment-stripped config — the configs
   *document* these traps in prose and a naive match would fire on the warning text. For the
-  artwork it pins the reduced-motion gate (every looping keyframe inside the opt-in block,
-  none outside it), the `--auth-*` custom properties agreeing between `LoginArtwork.tsx`
-  and `global.css` in both directions, the user-space filter region, the tilt group nesting
-  and the `screen` blend.
+  artwork it pins the reduced-motion gate (every looping keyframe **and** every
+  interaction rule inside the opt-in block, none outside it), the `--auth-*` custom
+  properties agreeing between `LoginArtwork.tsx` and `global.css` in both directions, the
+  user-space filter region, the tilt group nesting, the `screen` blend, and the two
+  performance shapes that are invisible in a screenshot: **no `transition` on
+  `.auth-art__follow`** and the glow moving by `transform` rather than by re-authoring its
+  gradient. Its `ruleBody()` helper extracts a rule from the comment-stripped CSS —
+  several of these selectors are *named in the prose above their own rule*, so a naive
+  `indexOf` slice asserts against the explanation instead of the code.
 
 Two testing gotchas worth knowing before you extend them:
 

@@ -54,6 +54,20 @@ const noPreferenceBlock = (() => {
   }
   return "";
 })();
+/**
+ * The declarations of one rule, comment-stripped.
+ *
+ * Slicing from `indexOf(selector)` is not good enough here: these selectors are
+ * *named in the prose* above their own rule, so a naive slice lands inside the
+ * comment and the assertion reads the explanation instead of the CSS.
+ */
+function ruleBody(selector: string): string {
+  const source = code(globalCss);
+  const at = source.indexOf(`${selector} {`);
+  if (at < 0) return "";
+  return source.slice(source.indexOf("{", at) + 1, source.indexOf("}", at));
+}
+
 const robots = read("public/robots.txt");
 const pkg = JSON.parse(read("package.json")) as {
   version: string;
@@ -160,10 +174,29 @@ describe("login chrome", () => {
     // `transform` computes to `none`, the shape simply never moves, and nothing
     // is logged. Checked in both directions — a variable declared and never read
     // is dead weight the next reader will trust.
-    const declared = new Set([...artwork.matchAll(/"(--auth-[a-z-]+)"/g)].map((m) => m[1]!));
+    //
+    // The stylesheet declares a few of these itself (the resting state, and the
+    // per-layer `--auth-fx/fy` binding), so those count as supplied. What must
+    // never happen is a `var()` that NOTHING sets.
+    const declared = new Set([
+      ...[...artwork.matchAll(/"(--auth-[a-z-]+)"/g)].map((m) => m[1]!),
+      ...[...globalCss.matchAll(/^\s*(--auth-[a-z-]+):/gm)].map((m) => m[1]!),
+    ]);
     const used = new Set([...globalCss.matchAll(/var\((--auth-[a-z-]+)/g)].map((m) => m[1]!));
     expect([...used].filter((name) => !declared.has(name))).toEqual([]);
-    expect([...declared].filter((name) => !used.has(name))).toEqual([]);
+    // The reverse only covers what the COMPONENT writes: a property it sets and
+    // no rule reads is a shape that will never move.
+    const written = [...artwork.matchAll(/"(--auth-[a-z-]+)"/g)].map((m) => m[1]!);
+    expect([...new Set(written)].filter((name) => !used.has(name))).toEqual([]);
+  });
+
+  it("never eases the follow with a per-frame CSS transition", () => {
+    // The pointer target moves every frame, so a `transition` on the follow
+    // wrapper is restarted every frame on all fifteen shapes — measured at 49
+    // fps against 59 for the same transforms driven from the rAF loop. Nothing
+    // about the picture changes, so this only ever shows up in a profile.
+    expect(ruleBody(".auth-art__follow")).not.toMatch(/transition:/);
+    expect(artwork).toMatch(/1 - Math\.exp\(-dt \/ FOLLOW_EASE\[layer\]\)/);
   });
 
   it("sizes the blur filter region in user space, not against the bbox", () => {
@@ -178,6 +211,46 @@ describe("login chrome", () => {
     // presentation attribute outright (author CSS always wins) and the tilt would
     // vanish for the whole animation, with no error.
     expect(artwork.indexOf("auth-art__sway")).toBeLessThan(artwork.indexOf("transform={`rotate("));
+  });
+
+  it("keeps every pointer/typing response inside the reduced-motion opt-in", () => {
+    // The interaction is motion like any other. Declared outside the opt-in
+    // block it would keep running for someone who asked for none — and unlike a
+    // keyframe set, a `transition` is not touched at all by tds-shared's
+    // `reduce` clamp, so nothing downstream would catch it.
+    for (const rule of [
+      ".auth-art__follow",
+      ".auth-art__layer--far",
+      ".auth-art__breathe",
+      ".auth-art__ripple",
+      ".auth-art__stage:hover",
+    ]) {
+      expect(noPreferenceBlock, `${rule} must sit inside the opt-in block`).toContain(rule);
+    }
+  });
+
+  it("gates the imperative responses in JS as well", () => {
+    // Two of the three responses cannot be stopped by a media query: the pointer
+    // offsets are written straight onto the node and the keystroke bursts are
+    // Web Animations. Only not starting them switches those off.
+    expect(artwork).toMatch(/matchMedia\("\(prefers-reduced-motion: no-preference\)"\)/);
+    expect(artwork).toMatch(/onPointerMove=\{motionOk \?/);
+  });
+
+  it("keeps the parallax on its own group, off the drifting one", () => {
+    // `.auth-art__ribbon` already animates `transform`, and an animation beats
+    // any other declaration of the same property outright — collapsing the two
+    // groups makes the parallax silently never appear.
+    expect(ruleBody(".auth-art__follow")).toMatch(/transform:\s*translate/);
+    expect(ruleBody(".auth-art__follow")).not.toMatch(/animation:/);
+    expect(artwork).toMatch(/className="auth-art__follow"[\s\S]{0,200}auth-art__ribbon/);
+  });
+
+  it("moves the glow by transform rather than re-authoring its gradient", () => {
+    // The pointer writes at frame rate. Moving a radial gradient's `at` position
+    // repaints the whole panel every frame; moving the element is composited.
+    expect(globalCss).toMatch(/transform:\s*translate3d\(var\(--auth-glow-x/);
+    expect(ruleBody(".auth-art__glow")).not.toMatch(/radial-gradient\([^)]*--auth-m/);
   });
 
   it("keeps the screen blend the composition is built on", () => {

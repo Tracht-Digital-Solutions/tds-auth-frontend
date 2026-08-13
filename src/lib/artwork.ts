@@ -32,6 +32,10 @@ export const VIEWBOX = 100;
  * at 20 units of overhang a ribbon starting at y=5 could put its cap around
  * x=5, which the panel does show. This is sized for the worst combination of
  * all four, with margin.
+ *
+ * The pointer parallax (the parallax) spends part of that margin — up to 4
+ * further units on a ribbon — so it is bounded in `artwork.test.ts` alongside
+ * the drift rather than left to grow independently.
  */
 export const OVERHANG = 45;
 
@@ -107,6 +111,43 @@ export interface Pulse {
   delay: number;
 }
 
+/**
+ * `depth` on a shape: how far it travels, in SVG user units, at full pointer
+ * deflection. Signed — negative is a counter-move.
+ *
+ * Seeded for the same reason the ambient drift is: the response is part of the
+ * composition, so a picture that is only reproducible when nobody touches it is
+ * not reproducible. It is also a *geometry* contract — this travel stacks on top
+ * of the drift and {@link OVERHANG} is sized against the total.
+ *
+ * Two things are assigned by LAYER rather than drawn, because depth that is
+ * merely likely is depth some seeds don't have:
+ *
+ *  - the sign — ribbons and sparks move with the pointer, rings against it, and
+ *  - the band — ribbons travel least, sparks most, with no overlap between the
+ *    three. That separation IS the depth cue.
+ */
+
+/**
+ * Easing time constants for the pointer follow, in milliseconds, per layer.
+ *
+ * The follow is eased in JS (see `LoginArtwork.tsx`), not by a CSS transition,
+ * and that is a measured decision rather than a preference: a `transition` whose
+ * target moves every frame is restarted every frame, and doing that on fifteen
+ * elements was the single most expensive thing on the page. In Chrome against
+ * the built `dist/` at 6× CPU throttling, sweeping the pointer across the panel
+ * ran at 49 fps with transitions and 59 fps with the identical transforms driven
+ * directly — the transforms themselves are nearly free.
+ *
+ * The consequence is that the lag became per LAYER instead of per shape. Nothing
+ * is lost: two neighbouring ribbons lagging differently is not something the eye
+ * can pick out, whereas the ribbons trailing the sparks is the whole effect.
+ *
+ * These are time constants, not per-frame factors, so the response is identical
+ * on a 60 Hz and a 144 Hz display — a fixed `+= (target - current) * k` is not.
+ */
+export const FOLLOW_EASE = { far: 420, mid: 190, near: 95 } as const;
+
 export interface Ribbon {
   /** Cubic path across the full canvas, deliberately over-hanging both edges. */
   d: string;
@@ -116,6 +157,8 @@ export interface Ribbon {
   /** Index into {@link BLUR_LEVELS} — bucketed so `<defs>` stays at three filters. */
   blur: number;
   motion: Drift;
+  /** Pointer travel in user units at full deflection; see the note above. */
+  depth: number;
 }
 
 export interface Ring {
@@ -125,6 +168,8 @@ export interface Ring {
   hue: string;
   opacity: number;
   motion: Orbit;
+  /** Negative: the rings are the layer that moves AGAINST the pointer. */
+  depth: number;
 }
 
 export interface Spark {
@@ -134,6 +179,22 @@ export interface Spark {
   hue: string;
   opacity: number;
   motion: Pulse;
+  /** The largest of the three bands — sparks are the near layer. */
+  depth: number;
+}
+
+/**
+ * A keystroke burst: one expanding ring, fired from a fixed pool round-robin.
+ *
+ * Only the origin is generated — the expansion itself is driven imperatively
+ * from the component (Web Animations), because a keystroke is an event and a
+ * CSS animation cannot be re-triggered without either remounting the element
+ * (which would reset its neighbours' ambient phase) or forcing a reflow.
+ */
+export interface Ripple {
+  cx: number;
+  cy: number;
+  hue: string;
 }
 
 export interface Artwork {
@@ -148,6 +209,7 @@ export interface Artwork {
   ribbons: Ribbon[];
   rings: Ring[];
   sparks: Spark[];
+  ripples: Ripple[];
 }
 
 /**
@@ -174,6 +236,28 @@ export const BLUR_LEVELS = [5, 10, 17] as const;
  * below is meant to catch, arrived at from the other side.
  */
 const BLUR_ALPHA = [1, 0.86, 0.68] as const;
+
+/**
+ * Parallax attenuation per blur bucket — softer means it travels LESS.
+ *
+ * Unlike {@link BLUR_ALPHA} this one matches the intuition, and it is the same
+ * physical story the blur already tells: a diffuse ribbon is the far layer, and
+ * far things move least under a moving viewpoint. Deriving the depth from the
+ * bucket rather than drawing it independently is what keeps the two consistent —
+ * a sharp ribbon that barely moved while a soft one swept past would read as a
+ * bug rather than as depth.
+ */
+export const FOLLOW_BY_BLUR = [1, 0.72, 0.48] as const;
+
+/**
+ * Size of the ripple pool.
+ *
+ * Fixed, not drawn: it is a recycling buffer, not a composition choice. Three is
+ * what a burst of fast typing needs — at RIPPLE_MS ≈ 1.1 s and one ripple per
+ * ~110 ms the oldest slot is always the one furthest through its expansion, so
+ * restarting it is the least visible interruption available.
+ */
+export const RIPPLE_SLOTS = 3;
 
 /**
  * mulberry32 — a small, fast, well-distributed PRNG.
@@ -263,6 +347,12 @@ export function generateArtwork(seed: number): Artwork {
         dur,
         delay: phase(dur),
       },
+      // The far layer: least travel. Positive — the ribbons lean toward the
+      // pointer, and the rings leaning away is what makes the two separate
+      // visibly instead of sliding as one sheet. The three bands are DISJOINT
+      // (ribbons < rings < sparks) and `artwork.test.ts` bounds them as such:
+      // overlapping bands make some seeds read as one flat sheet.
+      depth: r(between(2.2, 4) * FOLLOW_BY_BLUR[blur]!),
     });
   }
 
@@ -284,6 +374,10 @@ export function generateArtwork(seed: number): Artwork {
         dur,
         delay: phase(dur),
       },
+      // The mid layer, and the only one that moves AGAINST the pointer. Same
+      // argument as the counter-rotation above: it is what stops the parallax
+      // from reading as the whole picture being dragged.
+      depth: r(-between(4.8, 6.6)),
     });
   }
 
@@ -303,7 +397,19 @@ export function generateArtwork(seed: number): Artwork {
         dur,
         delay: phase(dur),
       },
+      // The near layer: most travel. Sparks are the only crisp
+      // shapes, so they are the only ones whose displacement the eye can
+      // actually measure — which is what carries the whole effect.
+      depth: r(between(7.4, 9.6)),
     });
+  }
+
+  // Origins only; the expansion is fired per keystroke from the component.
+  const ripples: Ripple[] = [];
+  for (let i = 0; i < RIPPLE_SLOTS; i++) {
+    // Held well inside the frame: a ripple is a circle, and one centred near an
+    // edge spends most of its life as an arc sliding off the crop.
+    ripples.push({ cx: r(between(22, 78)), cy: r(between(22, 78)), hue: pick(hues) });
   }
 
   return {
@@ -313,6 +419,7 @@ export function generateArtwork(seed: number): Artwork {
     ribbons,
     rings,
     sparks,
+    ripples,
   };
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { changePassword, fetchMe } from "~/lib/auth";
+import { signalTyping } from "~/lib/artworkSignal";
 import { resolveTarget } from "~/lib/redirect";
 
 const MIN_LEN = 12;
@@ -90,13 +91,19 @@ export default function PasswordChangeForm() {
   return (
     <form className="auth-form" onSubmit={submit}>
       {error ? <p className="status-pill status-pill--danger auth-error">{error}</p> : null}
+      {/* Same artwork signal as the login form — see `artworkSignal.ts`. A form
+          that forgets it leaves the composition inert with nothing logged, so
+          this suite asserts the emission. */}
       <label>
         Aktuelles Passwort
         <input
           className="field-boxed"
           type="password"
           value={oldPw}
-          onChange={(ev) => setOldPw(ev.target.value)}
+          onChange={(ev) => {
+            setOldPw(ev.target.value);
+            signalTyping();
+          }}
           autoComplete="current-password"
           autoFocus
           required
@@ -108,7 +115,10 @@ export default function PasswordChangeForm() {
           className="field-boxed"
           type="password"
           value={newPw}
-          onChange={(ev) => setNewPw(ev.target.value)}
+          onChange={(ev) => {
+            setNewPw(ev.target.value);
+            signalTyping();
+          }}
           autoComplete="new-password"
           minLength={MIN_LEN}
           required
@@ -120,7 +130,10 @@ export default function PasswordChangeForm() {
           className="field-boxed"
           type="password"
           value={confirmPw}
-          onChange={(ev) => setConfirmPw(ev.target.value)}
+          onChange={(ev) => {
+            setConfirmPw(ev.target.value);
+            signalTyping();
+          }}
           autoComplete="new-password"
           minLength={MIN_LEN}
           required

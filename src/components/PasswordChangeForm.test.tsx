@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { stubLocation, type StubbedLocation } from "~/test-support/location";
+import { TYPING_EVENT } from "~/lib/artworkSignal";
 
 /**
  * Behaviour tests for the password-change island (voluntary via `/passwort`, or
@@ -112,6 +113,25 @@ describe("session guard", () => {
     await Promise.resolve();
 
     expect(loc.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("the artwork signal", () => {
+  it("emits one signal per keystroke in all three fields", async () => {
+    // Same contract as the login form: the artwork is a separate island and
+    // this event is the only thing connecting them. A form that forgets it just
+    // leaves the composition inert — nothing throws, nothing logs.
+    const seen = vi.fn();
+    window.addEventListener(TYPING_EVENT, seen);
+    await renderForm();
+    const user = userEvent.setup({ delay: null });
+
+    await user.type(screen.getByLabelText("Aktuelles Passwort"), "ab");
+    await user.type(screen.getByLabelText("Neues Passwort"), "cd");
+    await user.type(screen.getByLabelText("Neues Passwort bestätigen"), "ef");
+    window.removeEventListener(TYPING_EVENT, seen);
+
+    expect(seen).toHaveBeenCalledTimes(6);
   });
 });
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { fetchMe, login } from "~/lib/auth";
+import { signalTyping } from "~/lib/artworkSignal";
 import { loginWithPasskey, passkeysSupported } from "~/lib/passkeys";
 import { resolveTarget } from "~/lib/redirect";
 
@@ -141,13 +142,20 @@ export default function LoginForm() {
   return (
     <form className="auth-form" onSubmit={submit}>
       {error ? <p className="status-pill status-pill--danger auth-error">{error}</p> : null}
+      {/* Every text field announces its keystrokes so the artwork island can
+          answer them — see `artworkSignal.ts` for why this is an explicit call
+          and not a listener over there. The signal carries no payload; the
+          checkbox below deliberately does not send one. */}
       <label>
         E-Mail
         <input
           className="field-boxed"
           type="email"
           value={email}
-          onChange={(ev) => setEmail(ev.target.value)}
+          onChange={(ev) => {
+            setEmail(ev.target.value);
+            signalTyping();
+          }}
           autoComplete="username"
           autoFocus
           required
@@ -159,7 +167,10 @@ export default function LoginForm() {
           className="field-boxed"
           type="password"
           value={password}
-          onChange={(ev) => setPassword(ev.target.value)}
+          onChange={(ev) => {
+            setPassword(ev.target.value);
+            signalTyping();
+          }}
           autoComplete="current-password"
           required
         />

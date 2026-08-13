@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   BLUR_LEVELS,
+  FOLLOW_BY_BLUR,
+  FOLLOW_EASE,
   OVERHANG,
   PALETTE,
+  RIPPLE_SLOTS,
   VIEWBOX,
   generateArtwork,
   randomSeed,
@@ -23,6 +26,17 @@ import {
  */
 
 const SEEDS = Array.from({ length: 300 }, (_, i) => i * 7919 + 13);
+
+/** Every hue a composition puts on screen, ripples included. */
+function huesOf(seed: number): string[] {
+  const art = generateArtwork(seed);
+  return [
+    ...art.ribbons.map((x) => x.hue),
+    ...art.rings.map((x) => x.hue),
+    ...art.sparks.map((x) => x.hue),
+    ...art.ripples.map((x) => x.hue),
+  ];
+}
 
 describe("determinism", () => {
   it("returns an identical composition for the same seed", () => {
@@ -88,27 +102,20 @@ describe("every composition is well-formed", () => {
     // light/dark for free.
     for (const seed of SEEDS) {
       const art = generateArtwork(seed);
-      const hues = [
-        ...art.ribbons.map((r) => r.hue),
-        ...art.rings.map((r) => r.hue),
-        ...art.sparks.map((s) => s.hue),
-      ];
-      for (const hue of hues) {
+      for (const hue of huesOf(seed)) {
         expect(PALETTE, `seed ${seed}`).toContain(hue);
       }
+      expect(art.ripples.length).toBe(RIPPLE_SLOTS);
     }
   });
 
   it("limits one composition to at most three hues", () => {
     // All six at once reads as a colour test card rather than a composition.
+    // The ripples are included on purpose: they are the one shape that appears
+    // only while someone is typing, so a hue drawn from outside the palette
+    // there would never show up in a screenshot.
     for (const seed of SEEDS) {
-      const art = generateArtwork(seed);
-      const used = new Set([
-        ...art.ribbons.map((r) => r.hue),
-        ...art.rings.map((r) => r.hue),
-        ...art.sparks.map((s) => s.hue),
-      ]);
-      expect(used.size, `seed ${seed}`).toBeLessThanOrEqual(3);
+      expect(new Set(huesOf(seed)).size, `seed ${seed}`).toBeLessThanOrEqual(3);
     }
   });
 
@@ -271,6 +278,78 @@ describe("the motion is ambient, not animated", () => {
       const { sway } = generateArtwork(seed);
       expect(Math.abs(sway.deg), `seed ${seed}`).toBeLessThanOrEqual(3);
       expect(sway.deg, `seed ${seed}`).not.toBe(0);
+    }
+  });
+
+  it("keeps the parallax inside the geometry budget OVERHANG is sized for", () => {
+    // The pointer travel stacks on top of the drift, so it spends the same
+    // margin. 4 units on a ribbon is the ceiling the OVERHANG note assumes;
+    // raising it means re-deriving OVERHANG against tilt + sway + rotation
+    // again, not just bumping a number here.
+    expect(Math.max(...FOLLOW_BY_BLUR)).toBe(1);
+    for (const seed of SEEDS) {
+      for (const ribbon of generateArtwork(seed).ribbons) {
+        expect(ribbon.depth, `seed ${seed}`).toBeLessThanOrEqual(4);
+        // The dimmest attenuation still has to leave visible travel — a ribbon
+        // that answers the pointer by a fifth of a unit answers it not at all.
+        expect(ribbon.depth, `seed ${seed}`).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it("moves the rings against the pointer and the other layers with it", () => {
+    // Depth that is merely likely is depth some seeds don't have. If every layer
+    // slid the same way the parallax would read as the whole picture being
+    // dragged — the same argument as the counter-rotating rings above.
+    for (const seed of SEEDS) {
+      const art = generateArtwork(seed);
+      for (const ribbon of art.ribbons) expect(ribbon.depth, `seed ${seed}`).toBeGreaterThan(0);
+      for (const spark of art.sparks) expect(spark.depth, `seed ${seed}`).toBeGreaterThan(0);
+      for (const ring of art.rings) expect(ring.depth, `seed ${seed}`).toBeLessThan(0);
+    }
+  });
+
+  it("orders the layers by travel: ribbons behind rings behind sparks", () => {
+    // This IS the depth cue. The blurred ribbons are the far layer and must
+    // always move least; the crisp sparks are the near one and must always move
+    // most — they are also the only shapes whose displacement the eye can
+    // actually measure, so an overlap here quietly flattens the effect.
+    for (const seed of SEEDS) {
+      const art = generateArtwork(seed);
+      const far = Math.max(...art.ribbons.map((x) => Math.abs(x.depth)));
+      const mid = art.rings.map((x) => Math.abs(x.depth));
+      const near = art.sparks.map((x) => Math.abs(x.depth));
+      expect(far, `seed ${seed}`).toBeLessThan(Math.min(...mid));
+      expect(Math.max(...mid), `seed ${seed}`).toBeLessThan(Math.min(...near));
+    }
+  });
+
+  it("eases the far layers more slowly than the near ones", () => {
+    // The lag runs the other way from the travel — that is what separates the
+    // layers WHILE the pointer moves, rather than only where it stops. It is a
+    // per-layer time constant rather than a per-shape one because a CSS
+    // transition per shape was measurably the most expensive thing on the page;
+    // see the note on FOLLOW_EASE.
+    expect(FOLLOW_EASE.far).toBeGreaterThan(FOLLOW_EASE.mid);
+    expect(FOLLOW_EASE.mid).toBeGreaterThan(FOLLOW_EASE.near);
+    // Below ~60ms the follow is rigid rather than weighted; above ~700ms a layer
+    // is still catching up long after the pointer has gone.
+    for (const tau of Object.values(FOLLOW_EASE)) {
+      expect(tau).toBeGreaterThanOrEqual(60);
+      expect(tau).toBeLessThanOrEqual(700);
+    }
+  });
+
+  it("keeps every ripple origin well inside the crop", () => {
+    // A ripple is a circle: one centred near an edge spends most of its life as
+    // an arc sliding off the frame, which reads as a rendering fault.
+    for (const seed of SEEDS) {
+      for (const ripple of generateArtwork(seed).ripples) {
+        expect(ripple.cx, `seed ${seed}`).toBeGreaterThanOrEqual(20);
+        expect(ripple.cx, `seed ${seed}`).toBeLessThanOrEqual(80);
+        expect(ripple.cy, `seed ${seed}`).toBeGreaterThanOrEqual(20);
+        expect(ripple.cy, `seed ${seed}`).toBeLessThanOrEqual(80);
+      }
     }
   });
 

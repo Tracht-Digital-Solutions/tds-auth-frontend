@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ConfirmDialog, Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { fetchMe } from "~/lib/auth";
+import { signalTyping } from "~/lib/artworkSignal";
 import {
   deletePasskey,
   listPasskeys,
@@ -143,7 +144,12 @@ export default function PasskeyManager() {
           className="field-boxed"
           type="text"
           value={name}
-          onChange={(ev) => setName(ev.target.value)}
+          // The artwork answers every text field on the site, this one included
+          // — see `artworkSignal.ts`.
+          onChange={(ev) => {
+            setName(ev.target.value);
+            signalTyping();
+          }}
           placeholder={defaultLabel()}
           maxLength={100}
         />
