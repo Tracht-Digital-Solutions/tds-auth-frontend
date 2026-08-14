@@ -75,23 +75,52 @@ in one place.
     deploy, and seeding it in the initial render instead would make the server's markup
     disagree with the client's on *every* load — a hydration mismatch by construction.
     Generating in an effect is the only variant that is both fresh and correct.
+  - **Variety comes from a SCENE, drawn per visit.** Four archetypes (`SCENES`), each
+    with its own shape vocabulary *and* its own motion vocabulary:
+
+    | scene | wash (soft, back) | structure (crisp, middle) | accent (crisp, front) |
+    |---|---|---|---|
+    | `ribbons` | 4–7 curved bands, `drift` | 2–4 rings, `orbit` | 2–4 dots, `pulse` |
+    | `orbits` | 2 wide blurred haloes, `drift` | 5–9 arc segments about 1–2 foci, `spin` | 3–5 dots, `pulse` |
+    | `particles` | 2–3 blurred blobs, `drift` | 1–2 rings, `orbit` | 16–28 dots + hairlines, `pulse` |
+    | `strata` | 6–10 parallel bands, `slide` | 3–5 cross-ticks, `slide` | 2–4 dots, `pulse` |
+
+    Before them the generator only varied the parameters of one picture, so a visitor
+    who reloaded saw the same thing again. **Every scene fills the same three layers**
+    — that contract is what lets one set of blur filters, one `screen` blend and one
+    depth read serve all four, and it is why adding a fifth scene is a generator change
+    and nothing else.
+  - **The shape model is two render kinds, not one type per scene.** A stroked `path`
+    and a `circle` that is either stroked or filled cover every archetype, which keeps
+    `LoginArtwork.tsx` a single loop with no per-scene branching. `Mark.spans` says
+    whether a mark must leave the frame at both ends; `Mark.layer` is what the
+    interaction rules key off.
   - **The generator is bounded, not free.** Anything random enough to be interesting is
-    random enough to be ugly, so ribbon count, curvature, thickness, opacity and palette
-    are clamped; only the arrangement inside those ranges varies. One composition draws
+    random enough to be ugly, so counts, curvature, thickness, opacity and palette are
+    clamped; only the arrangement inside those ranges varies. One composition draws
     from **two or three** hues, never the full six — all of them at once reads as a
-    colour test card. `artwork.test.ts` sweeps 300 seeds against those bounds.
+    colour test card. `artwork.test.ts` sweeps 300 seeds **per scene** against those
+    bounds; left to the seed alone each scene would only get a quarter of the sweep.
   - **It is seeded and pure**, so a composition is reproducible from its number alone.
     That is what makes it testable, and what would let a specific one be pinned later.
+    `generateArtwork(seed, scene)` forces the archetype for exactly that purpose, and
+    consumes the scene draw either way so the forced form is the same random stream.
   - Colours are emitted as `var(--color-*)`, never literals — the artwork follows the
     theme for free instead of needing a second palette.
   - `mix-blend-mode: screen` on the SVG is load-bearing: it is what makes overlapping
-    ribbons read as light rather than as stacked paint.
-  - **The ribbons are soft on purpose and the rings/sparks are sharp on purpose.**
-    `BLUR_LEVELS` (5/10/17) turns the ribbons into diffuse colour clouds; the crisp
-    rings and dots on top are the depth contrast and the place the eye lands. Keep the
-    largest radius **≤ 20** — it is what sizes the filter region (below).
+    marks read as light rather than as stacked paint.
+  - **The wash is soft on purpose and everything else is sharp on purpose.**
+    `BLUR_LEVELS` (5/10/17) turns the wash into diffuse colour clouds; the crisp
+    structure and accents on top are the depth contrast and the place the eye lands.
+    Only the wash is ever filtered. Keep the largest radius **≤ 20** — it is what sizes
+    the filter region (below).
+  - **A thin mark cannot take the widest bucket.** The `strata` bands shipped with the
+    ribbons' bucket weighting and rendered as a faint vertical gradient with a couple of
+    stray ticks over it: a 3-unit stroke smeared over σ=17 has no peak left at all. A
+    ribbon survives that blur because it is up to 24 wide *and* curved; a straight band
+    is neither, so `bandMark` never draws bucket 2.
   - **Softer means DIMMER, not brighter** (`BLUR_ALPHA`). The intuition runs the other
-    way: a wide Gaussian lowers a ribbon's peak, so it looks like it needs more ink.
+    way: a wide Gaussian lowers a mark's peak, so it looks like it needs more ink.
     Measured, that is backwards — `screen` accumulates over *coverage*, and at radius 17
     one ribbon covers most of the canvas, so five of them lift the whole field instead
     of crossing in a few bright places. Compensating the peak took the panel's mean
@@ -114,13 +143,14 @@ in one place.
     composition is only half reproducible from its number and the sweep has nothing to
     bound. "Alive but not distracting" is a requirement, and a requirement that is not a
     number cannot be tested; `artwork.test.ts` pins the amplitudes and periods.
-  - **`OVERHANG` is sized against the motion bounds, so the two move together.** Ribbons
-    run past both edges so no round stroke cap is ever visible. The trap is that the
-    limiting case is not the drift — it is *rotation*: a tilt about the canvas centre
-    swings the ends of a high or low ribbon **inward**, and at the original 20 units a
-    ribbon starting near `y=5` could put its cap at roughly `x=5`, which the panel does
+  - **`OVERHANG` is sized against the motion bounds, so the two move together.** Marks
+    flagged `spans` run past both edges so no round stroke cap is ever visible. The trap
+    is that the limiting case is not the drift — it is *rotation*: a tilt about the canvas
+    centre swings the ends of a high or low mark **inward**, and at the original 20 units
+    a ribbon starting near `y=5` could put its cap at roughly `x=5`, which the panel does
     show. Raising a drift amplitude means re-checking `OVERHANG` against the worst
-    combination of tilt + sway + per-ribbon rotation, not just against the translation.
+    combination of tilt + sway + per-mark rotation + the hover pose, not just against the
+    translation.
   - **The loops are opt-in under `no-preference`, and that is not decoration.**
     tds-shared's `base.css` clamps `animation-duration: 0.01ms` and
     `animation-iteration-count: 1` on `*` under `reduce`. That clamp is built for
@@ -132,10 +162,13 @@ in one place.
   - **The tilt stays an SVG attribute on a group INSIDE the animated sway group.** A CSS
     transform animation on the tilt group would override the presentation attribute
     outright (author CSS always wins) and the tilt would vanish, with no error.
-  - **Each ribbon `<path>` sits in its own static wrapper `<g>`; the wrapper is what
-    moves.** The filter stays on the motionless child, so the Gaussian is a cached raster
-    rather than a per-frame recompute. Don't "simplify" this by animating the path
-    directly. Measured in Chrome against the built `dist/`: a flat 60 fps with **zero**
+  - **Every mark is THREE nested elements, one job each** — `.auth-art__pose` (the hover
+    transition) around `.auth-art__m--*` (the ambient animation) around the drawn node,
+    which never moves. Both nestings are load-bearing: an animation beats any other
+    declaration of the same property, so pose and motion cannot share an element; and the
+    filter has to stay on the motionless child or the Gaussian is a per-frame recompute
+    instead of a cached raster. Don't "simplify" this by collapsing them.
+    Measured in Chrome against the built `dist/`: a flat 60 fps with **zero**
     frames over 32 ms at 1×, 4× and 6× CPU throttling (the same harness drops to 30 fps
     at 20×, so it does detect load). `will-change` is therefore deliberately absent —
     it would promote 4–7 layers underneath a `mix-blend-mode: screen` element, which is
@@ -144,56 +177,74 @@ in one place.
     whose SVG filters are not always GPU-side.
   - **Seeded values reach CSS as inline custom properties** read by shared `@keyframes`.
     Inside `@keyframes`, a `var()` in a `transform` is substituted at computed-value time
-    and is then constant for that element — which is what lets one rule drive seven
-    differently-moving ribbons. A mistyped name makes the whole declaration invalid, so
-    the shape simply never moves, silently; `static-posture.test.ts` cross-checks the
-    names against `global.css` in both directions, and every `var()` carries an identity
-    fallback.
-  - The `opacity` presentation attribute on the sparks **stays** even though a keyframe
-    animates it: under `reduce` no keyframe applies, so the attribute *is* the rendering,
-    and the resting state matches the old static composition by construction.
+    and is then constant for that element — which is what lets **one rule per motion
+    kind** drive thirty differently-moving marks. A mistyped name makes the whole
+    declaration invalid, so the shape simply never moves, silently; `static-posture.test.ts`
+    cross-checks the names against `global.css` in both directions, and every `var()`
+    carries an identity fallback.
+  - **`spin` is the one motion that does not pivot on the canvas centre.** An arc segment
+    turns on the centre of the circle it was cut from, carried as `--auth-ox/oy` in user
+    units. The obvious `transform-box: fill-box` pivots on the arc's *bounding box*
+    instead, which turns an orrery into tumbling debris. It shares `auth-art-orbit`'s
+    keyframes — same rotation, different pivot; a second identical keyframe block would
+    be dead weight, not documentation.
 
-- **The composition answers the pointer and the keyboard.** Three responses, three
-  mechanisms, all inert under `reduce`.
-  - **Pointer → parallax.** Every shape sits in a `.auth-art__follow` wrapper that
-    translates by its own seeded `depth`. Two things are assigned by LAYER rather than
-    drawn, because "depth that is merely likely is depth some seeds don't have": the
-    **sign** (ribbons and sparks lean toward the pointer, rings away — otherwise the
-    parallax reads as the whole picture being dragged) and the **band** (ribbons travel
-    least, sparks most, the three ranges **disjoint**). Ribbon depth is attenuated by its
-    blur bucket (`FOLLOW_BY_BLUR`) so the far, diffuse layer moves least — the same
-    physical story the blur already tells.
-  - **The easing is a rAF loop, NOT a CSS transition, and that is measured.** The obvious
-    implementation puts `transition: transform` on each wrapper. The pointer target moves
-    every frame, so the transition is *restarted* every frame on all fifteen shapes:
-    **49 fps against 59** for the identical transforms driven directly (Chrome, built
-    `dist/`, 6× CPU throttling). The transforms are nearly free; the transition
-    bookkeeping was the single most expensive thing on the page. So `LoginArtwork.tsx`
-    eases **three** positions — one per layer — and writes six custom properties on one
-    element per frame, which the shapes inherit via the `.auth-art__layer--*` bindings.
-    The consequence is that the lag is per LAYER, not per shape; nothing is lost, because
-    two neighbouring ribbons lagging differently is not something the eye can pick out.
-    `FOLLOW_EASE` holds **time constants** (`1 - exp(-dt/τ)`), so the response is the same
-    on a 60 Hz and a 144 Hz display — a fixed per-frame factor is not. `dt` is clamped
-    (`MAX_STEP_MS`) or a backgrounded tab teleports the composition on its first frame back.
-  - **The loop stops.** An exponential ease never arrives, so below `SETTLED` the value is
-    snapped to the target and the frame is not rescheduled — otherwise a decoration nobody
-    is pointing at holds a frame callback forever. Snapping also makes the resting state
-    *exactly* the composition a visitor who never moved the mouse sees.
-  - **`pointerType: "touch"` is ignored.** A finger dragging across the band leaves no
-    `pointerleave` behind, so the composition would stay parked wherever it lifted.
-  - **A zero-sized panel is ignored too.** jsdom, or a panel measured mid-layout, divides
-    to `NaN`; a `NaN` custom property makes the whole `transform` invalid at
-    computed-value time — every shape snaps to the origin, with nothing logged.
-  - **Hover brightens the structure and never the ribbons.** Ribbon alpha is the one knob
-    that washes the panel out under `screen` (see `BLUR_ALPHA`), so the ribbons answer with
-    movement only; the rings thicken and the sparks scale. Sparks answer with **scale**
-    rather than opacity because their opacity is already driven by `auth-art-pulse`, and a
-    running animation beats a transition outright — the declaration would be ignored with
-    nothing to show for it.
+- **The composition answers HOVER and the keyboard — never the cursor's position.**
+  Both responses are inert under `reduce`.
+  - **It used to track the pointer, and that was the bug.** A rAF loop wrote normalised
+    pointer offsets onto the stage to drive a three-layer parallax, and a 34rem disc was
+    translated to sit under the crosshair. Neither was a *defect* — both worked — but the
+    first turns the picture into a read-out of where the mouse is, and the second reads
+    as a cursor decoration rather than as artwork. There is now **no coordinate anywhere
+    in the artwork**, in JS or in CSS: `static-posture.test.ts` fails on `clientX`,
+    `getBoundingClientRect`, `requestAnimationFrame`, any `onPointer*` handler, and on
+    the `--auth-glow`/`__follow` selectors, because a design regression like this has no
+    other symptom.
+  - **Hover → a seeded pose.** Every mark sits in a `.auth-art__pose` wrapper that glides
+    into a target offset/rotation/scale while the pointer is anywhere over the panel. One
+    direction (a unit vector) is drawn per composition — per-mark directions cancel out
+    into a shimmer; one axis reads as the picture leaning. Two things are assigned by
+    LAYER rather than drawn, because "depth that is merely likely is depth some seeds
+    don't have": the **sign** (`structure` moves against the other two — otherwise the
+    response reads as the whole picture being dragged) and the **band** (`POSE_BANDS`:
+    wash travels least, accents most, the three ranges **disjoint**). That separation IS
+    the depth cue.
+  - **A CSS `transition` is correct here, and the old note said the opposite.** It said so
+    correctly: a parallax target moves every frame while the pointer does, so the
+    transition is *restarted* every frame on every shape — **49 fps against 59** for the
+    identical transforms driven from a rAF loop (Chrome, built `dist/`, 6× CPU
+    throttling). None of that applies to a value that changes exactly twice per visit.
+    The rAF loop, `FOLLOW_EASE`, `SETTLED` and `MAX_STEP_MS` are all gone with it.
+  - **The stagger is capped low** (`POSE_DELAY_MAX`, 220 ms). It is what keeps thirty
+    marks from snapping into place in unison — but the same delay applies on the way
+    *back*, and a decoration still rearranging itself half a second after the pointer
+    left reads as lag rather than as weight.
+  - **A wash mark's pose never rotates.** Translation and outward scale cannot pull a
+    spanning mark's overhang inside the frame; a rotation about the canvas centre swings
+    the ENDS furthest and can. Same geometry budget `OVERHANG` is sized against.
+  - **The hover rules sit inside `@media (hover: hover) and (pointer: fine)`.** A tap
+    latches `:hover` on a touch screen until something else is tapped, so the composition
+    would sit in its pose permanently with no `pointerleave` to bring it home — the same
+    reason the old implementation ignored `pointerType: "touch"`, now expressed where it
+    belongs. Nothing measures the panel any more either, so the old `NaN`-from-a-zero-
+    sized-rect guard is simply not needed.
+  - **Hover firms up the structure and never the wash.** Wash alpha is the one knob that
+    blows the panel out under `screen` (see `BLUR_ALPHA`), so the wash answers with
+    movement only; the structure thickens (`--auth-w` carries its resting width so the
+    rule can scale it by a *factor* — these marks are 0.3–0.7 wide and an absolute target
+    would thin half of them) and brightens, and the accents scale. Accents answer with
+    **scale** rather than opacity because theirs is already driven by `auth-art-pulse`,
+    and a running animation beats a transition outright — the declaration would be
+    ignored with nothing to show for it.
+  - **Each mark's alpha is a presentation attribute** (`stroke-opacity`/`fill-opacity`),
+    not an `opacity` inline style on the group. Inline styles beat author CSS, so the
+    structure's hover brightening would have been silently ignored. `auth-art-pulse`
+    therefore rests at exactly **1** and multiplies, rather than naming an absolute
+    opacity — which also means that under `reduce`, where no keyframe applies, the group
+    is simply transparent and the mark's own value is the whole rendering.
   - **Typing → energy + a burst.** Each keystroke sets `--auth-energy` to 1 (decaying
-    ~900 ms after the last one), which makes the whole composition inhale, the sparks grow
-    and the glow light up; and it fires **one expanding ripple** from a fixed pool of three
+    ~900 ms after the last one), which makes the whole composition inhale and the accents
+    grow; and it fires **one expanding ripple** from a fixed pool of three
     seeded origins. The split is the point: a keystroke needs an answer inside a frame or
     the feedback is not attributable to it, but a per-keystroke *ambient* change would
     strobe while someone types a password. The ripple uses **Web Animations**, because a
@@ -208,25 +259,18 @@ in one place.
     remember-me checkbox, anything added later) and the coupling stays greppable. **The
     cost is that a new form must call it**; a form that forgets leaves the composition
     inert with nothing logged, so every island suite asserts its own emission.
-  - **Reduced motion is gated in JS as well as CSS.** Two of the three responses are
-    imperative — the offsets are written straight onto the node and the bursts are Web
-    Animations — and a media query can stop neither. The component reads
+  - **Reduced motion is gated in JS as well as CSS.** The keystroke bursts are Web
+    Animations and no media query can stop those, so the component reads
     `matchMedia("(prefers-reduced-motion: no-preference)")`, keeps it live, and simply
-    does not attach the handlers.
-  - **The cursor glow is a translated disc, not a re-authored gradient.** Moving a radial
-    gradient's `at` position repaints the whole panel every frame; moving the element is
-    composited. That is also why the component emits pixel offsets alongside the
-    normalised ones — a percentage in `translate()` resolves against the *element's* box,
-    not the panel's. It paints in **`--color-accent-pink`**, not `--color-accent`: the
-    panel is a fixed dark field while the tokens flip, and the accent's light value is a
-    deep burgundy that reads as a smudge over navy.
-  - **Measured cost of the whole thing** (Chrome, built `dist/`, 1440×900): 60 fps with no
-    long frames at 1× and 4× CPU throttling for both the pointer sweep and fast typing. At
-    **6×**, ambient-only holds 60 fps while a *continuously swept* pointer runs ~52 fps —
-    a real cost, though part of it is the CDP-driven sweep itself under the same throttle.
-    It degrades gracefully, and it never runs on touch. Panel mean luminance is unchanged
-    at rest (the glow is `opacity: 0` there) and rises by ~2 under hover/typing — well
-    inside the band `BLUR_ALPHA` documents.
+    does not subscribe to the typing bus. The hover pose needs nothing there: it is pure
+    CSS inside the same opt-in block.
+  - **Judge any change to this in a browser, at several reloads.** Every visit is a
+    different seed *and* a different scene now, so one screenshot cannot tell "this build
+    is wrong" from "that composition was". `npm run build && npx astro preview`, then
+    drive it with `playwright-core` (`channel: "chrome"`) — read `data-scene` off the
+    `<svg>` to be sure you saw all four, compare `getComputedStyle(...).transform` on
+    `.auth-art__pose` at two *different* cursor positions inside the panel (they must be
+    identical), and check `document.getAnimations()` under `reducedMotion: "reduce"`.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
@@ -283,29 +327,34 @@ in one place.
   forward *without* rendering the form), the `mustChangePassword` branch from both sources,
   `?next=` propagation into `/passwort`, the post-login `/me` re-confirmation, and every
   status→message mapping.
-- **`src/lib/artwork.test.ts`** — the generator's *range*, not one picture: every seed
-  produces a composed frame (bounded shape counts, no NaN in a path, a blur index that
-  resolves, opacities strictly between 0 and 1, ribbons overhanging both edges so no
-  stroke cap shows), the same seed always produces the same frame, and 300 seeds produce
-  300 distinct ones — a PRNG wired up wrongly still passes the first two checks and
-  renders the identical picture forever. It also bounds the **motion**: drift amplitudes
-  and periods, a negative-but-sub-cycle phase on every shape, counter-rotating rings, and
-  the alpha ceiling that keeps `screen` from washing the panel out. Those numbers are how
-  "ambient, not animated" is enforced — a five-second cycle passes every other check here.
-  The **parallax** is bounded the same way: the three depth bands stay disjoint and
-  correctly signed for every seed (that separation IS the depth cue), the ribbon travel
-  stays inside the margin `OVERHANG` was sized for, and the layer easings stay ordered.
+- **`src/lib/artwork.test.ts`** — the generator's *range*, not one picture, and it sweeps
+  300 seeds **in each of the four scenes**: every seed produces a composed frame (all
+  three layers filled, marks handed over in paint order, bounded counts, no NaN in a
+  path, a blur index that resolves and only on the wash, opacities strictly between 0 and
+  1, spanning marks overhanging both edges so no stroke cap shows *and* non-spanning ones
+  staying inside the crop), the same seed always produces the same frame, and 300 seeds
+  produce 300 distinct ones — a PRNG wired up wrongly still passes the first two checks
+  and renders the identical picture forever. It also pins that **all four scenes actually
+  get drawn**, and that none takes more than half the draws. It bounds the **motion**:
+  amplitudes and periods per motion kind, a negative-but-sub-cycle phase on every mark,
+  counter-rotating consecutive turns, spin pivots inside the picture, and the alpha
+  ceiling that keeps `screen` from washing the panel out. Those numbers are how "ambient,
+  not animated" is enforced — a five-second cycle passes every other check here. The
+  **hover pose** is bounded the same way: the three travel bands stay disjoint and
+  correctly signed for every seed (that separation IS the depth cue), the wash pose never
+  rotates, scale is outward-only, and the stagger stays under its ceiling.
 - **`src/lib/artworkSignal.test.ts`** — the form → artwork bus. Delivery, unsubscribe (a
   handler that outlives its island is the same silence with a leak attached), that the
   event carries **no payload** (a password field emits it too, so "just the length" is
   still the wrong instinct), and that it no-ops without a `window`.
-- **`src/components/LoginArtwork.test.tsx`** — the interaction wiring, not the looks:
-  reduced motion gating the imperative half, a zero-sized panel not producing `NaN`, touch
-  being ignored, the ease converging *and stopping*, the far layer visibly trailing the
-  near one mid-flight, a resumed background tab not teleporting, and the typing energy
-  rising and decaying. Its rAF stub advances a **real clock** — the ease integrates over
-  elapsed time, so a stub that always passes `0` computes a zero delta and everything
-  "passes" while nothing moves.
+- **`src/components/LoginArtwork.test.tsx`** — the interaction wiring, not the looks: the
+  composition generated client-side with its seed *and scene* in the markup, every mark
+  wrapped in a pose group inside a motion group (collapsing the two is silent — an
+  animation beats the pose transition outright), each mark's alpha as a presentation
+  attribute rather than an inline group `opacity`, reduced motion gating the imperative
+  half, and the typing energy rising and decaying. Its own `describe` block pins the
+  regression this whole design exists to prevent: **a pointer moving over the stage must
+  write nothing to it**, there must be no glow element, and nothing may measure the panel.
 - **`tests/static-posture.test.ts`** — the AGENTS.md traps that fail *silently* (build stays
   green, production quietly breaks): noindex meta + `Disallow: /` + no sitemap, Tailwind via
   `@tailwindcss/postcss`, Fontsource as JS imports, the `tdsViteBuild` spread. It reads the
@@ -314,10 +363,11 @@ in one place.
   artwork it pins the reduced-motion gate (every looping keyframe **and** every
   interaction rule inside the opt-in block, none outside it), the `--auth-*` custom
   properties agreeing between `LoginArtwork.tsx` and `global.css` in both directions, the
-  user-space filter region, the tilt group nesting, the `screen` blend, and the two
-  performance shapes that are invisible in a screenshot: **no `transition` on
-  `.auth-art__follow`** and the glow moving by `transform` rather than by re-authoring its
-  gradient. Its `ruleBody()` helper extracts a rule from the comment-stripped CSS —
+  user-space filter region, the tilt group nesting, the `screen` blend, and the shapes
+  that are invisible in a screenshot: **nothing reads the pointer's position**, the hover
+  rules sit behind `@media (hover: hover) and (pointer: fine)`, the pose is a
+  `transition` on its own group with no `animation` on it, and each mark's alpha stays
+  overridable. Its `ruleBody()` helper extracts a rule from the comment-stripped CSS —
   several of these selectors are *named in the prose above their own rule*, so a naive
   `indexOf` slice asserts against the explanation instead of the code.
 

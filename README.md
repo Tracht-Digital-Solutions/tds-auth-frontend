@@ -38,6 +38,8 @@ npm run build              # → dist/
 | `src/lib/redirect.test.ts` | the `?next=` allow-list — **security-critical** (userinfo `@`, protocol-relative, look-alike hosts, non-http schemes) |
 | `src/lib/auth.test.ts` | the `tds-auth-api` client with `fetch` stubbed: `credentials: "include"` on every call, status pass-through, unparseable bodies |
 | `src/components/*.test.tsx` | both islands in jsdom — on-mount SSO, the forced-password-change branch, `?next=` propagation, every error message, the in-flight/disabled states |
+| `src/lib/artwork.test.ts` | the login artwork's generator over 300 seeds **× all four scenes**: composed geometry, bounded ambient motion, the hover-pose travel bands |
+| `src/components/LoginArtwork.test.tsx` | the artwork's wiring — and that it writes **nothing** when the pointer moves over it (it answers hover, never the cursor's position) |
 | `tests/static-posture.test.ts` | the traps that fail *silently*: noindex + no sitemap, Tailwind via PostCSS (not the Vite plugin), Fontsource as JS imports, the `tdsViteBuild` spread |
 
 Astro rendering itself stays on `npm run type-check`.

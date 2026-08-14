@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { RIPPLE_SLOTS } from "~/lib/artwork";
+import { RIPPLE_SLOTS, SCENES } from "~/lib/artwork";
 import { signalTyping } from "~/lib/artworkSignal";
 import LoginArtwork from "~/components/LoginArtwork";
 
@@ -13,38 +13,16 @@ import LoginArtwork from "~/components/LoginArtwork";
  * geometry and a browser is the only place to judge the rest. What this file
  * pins is the wiring, all of which fails silently in production:
  *
- *  - reduced motion must switch the interaction off in JS, not only in CSS. Two
- *    of the three responses are imperative (the offsets are written onto the
- *    node, the bursts are Web Animations); a media query cannot stop either.
- *  - a zero-sized panel must not produce NaN. A NaN custom property makes the
- *    whole `transform` invalid at computed-value time — every shape snaps to the
- *    origin, with nothing logged.
- *  - leaving the panel must park the composition back at centre, and the pending
- *    frame must be cancelled or it re-applies the last offset a frame later.
+ *  - the composition must be generated CLIENT-side, once, with its seed and
+ *    scene visible in the markup,
+ *  - nothing may read the pointer's POSITION. The hover response is pure CSS by
+ *    design; a stray listener writing offsets onto the node is exactly the
+ *    regression this file exists to catch, and it would look fine on screen,
+ *  - reduced motion must switch the imperative responses off in JS, not only in
+ *    CSS — the keystroke bursts are Web Animations and no media query stops
+ *    those, and
  *  - the typing signal has to reach the artwork at all, and let go afterwards.
  */
-
-/**
- * rAF is driven manually, with a real advancing clock: the follow eases over
- * ELAPSED TIME, so a stub that always passes `0` would compute a zero delta and
- * nothing would ever move — a green test proving the opposite of the truth.
- */
-let queue = new Map<number, FrameRequestCallback>();
-let nextFrameId = 1;
-let now = 0;
-
-/** One frame, 16 ms later. */
-function tick(ms = 16) {
-  now += ms;
-  const due = [...queue.values()];
-  queue.clear();
-  for (const callback of due) callback(now);
-}
-
-/** Run until the loop stops scheduling itself, i.e. until the ease has settled. */
-function settle(maxFrames = 400) {
-  for (let i = 0; queue.size > 0 && i < maxFrames; i++) tick();
-}
 
 /**
  * jsdom's `matchMedia` answers `false` to everything, which would read as
@@ -62,17 +40,9 @@ function stubMotionPreference(noPreference: boolean) {
   );
 }
 
-/** jsdom measures everything as 0×0; the component treats that as unmeasurable. */
-function stubSize(el: HTMLElement, width: number, height: number) {
-  el.getBoundingClientRect = () =>
-    ({ left: 0, top: 0, right: width, bottom: height, width, height, x: 0, y: 0 }) as DOMRect;
-}
-
 function renderStage() {
   const { container } = render(<LoginArtwork />);
-  const stage = container.querySelector(".auth-art__stage") as HTMLElement;
-  stubSize(stage, 400, 200);
-  return stage;
+  return container.querySelector(".auth-art__stage") as HTMLElement;
 }
 
 /** Inline custom property, or "" when the component never wrote one. */
@@ -81,8 +51,7 @@ const read = (el: HTMLElement, name: string) => el.style.getPropertyValue(name);
 /**
  * jsdom implements no `PointerEvent`, and Testing Library's `fireEvent.pointerMove`
  * silently falls back to a bare `Event` — coordinates and `pointerType` are
- * dropped, so the handler reads `undefined` and every assertion below turns into
- * `NaN`. Build the event by hand instead: a `MouseEvent` carries the
+ * dropped. Build the event by hand instead: a `MouseEvent` carries the
  * coordinates, and `pointerType` is defined onto it.
  */
 function pointerMove(el: HTMLElement, clientX: number, clientY: number, pointerType = "mouse") {
@@ -91,18 +60,7 @@ function pointerMove(el: HTMLElement, clientX: number, clientY: number, pointerT
   fireEvent(el, event);
 }
 
-beforeEach(() => {
-  queue = new Map();
-  nextFrameId = 1;
-  now = 0;
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
-    const id = nextFrameId++;
-    queue.set(id, cb);
-    return id;
-  });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => queue.delete(id));
-  stubMotionPreference(true);
-});
+beforeEach(() => stubMotionPreference(true));
 
 afterEach(() => {
   cleanup();
@@ -111,14 +69,40 @@ afterEach(() => {
 });
 
 describe("rendering", () => {
-  it("generates a composition client-side and stamps its seed", () => {
+  it("generates a composition client-side and stamps its seed and scene", () => {
     const stage = renderStage();
     const svg = stage.querySelector(".auth-art__canvas")!;
 
     // Server-rendering it would freeze one picture into the build; seeding it in
     // the first render instead is a hydration mismatch by construction.
     expect(svg.getAttribute("data-seed")).toMatch(/^\d+$/);
-    expect(stage.querySelectorAll(".auth-art__follow").length).toBeGreaterThan(0);
+    expect(SCENES as readonly string[]).toContain(svg.getAttribute("data-scene"));
+    expect(stage.querySelectorAll(".auth-art__mark").length).toBeGreaterThan(0);
+  });
+
+  it("wraps every mark in a pose group and a motion group", () => {
+    // Three nested elements, one property each. Collapsing them is silent: an
+    // animation beats the pose transition outright, so the hover response would
+    // simply never appear.
+    const stage = renderStage();
+
+    for (const mark of stage.querySelectorAll(".auth-art__mark")) {
+      const motion = mark.parentElement!;
+      expect(motion.getAttribute("class")).toMatch(/auth-art__m--/);
+      expect(motion.parentElement!.getAttribute("class")).toContain("auth-art__pose");
+    }
+  });
+
+  it("carries each mark's own alpha as a presentation attribute", () => {
+    // Not `opacity` on the group: an inline style cannot be overridden by the
+    // hover rules, and the structure would have nothing left to brighten.
+    const stage = renderStage();
+
+    for (const mark of stage.querySelectorAll(".auth-art__mark")) {
+      const alpha = mark.getAttribute("stroke-opacity") ?? mark.getAttribute("fill-opacity");
+      expect(Number(alpha)).toBeGreaterThan(0.1);
+      expect(mark.parentElement!.style.opacity).toBe("");
+    }
   });
 
   it("renders the ripple pool up front, invisible", () => {
@@ -129,125 +113,40 @@ describe("rendering", () => {
     expect(ripples.length).toBe(RIPPLE_SLOTS);
     for (const ripple of ripples) expect(ripple.getAttribute("opacity")).toBe("0");
   });
-
-  it("gives the glow and the composition one common ancestor", () => {
-    // Both read the pointer custom properties, and only the stage sets them.
-    const stage = renderStage();
-
-    expect(stage.querySelector(".auth-art__glow")).not.toBeNull();
-    expect(stage.querySelector(".auth-art__canvas")).not.toBeNull();
-  });
 });
 
-describe("following the pointer", () => {
-  it("eases every layer to the pointer, and the glow to it in pixels", () => {
-    const stage = renderStage();
+describe("it does not follow the cursor", () => {
+  // The point of the whole design. Both halves used to exist and both are gone:
+  // a rAF loop wrote normalised pointer offsets onto the stage for a per-layer
+  // parallax, and a 34rem disc was translated to sit under the crosshair. The
+  // first made the picture a read-out of the mouse position; the second read as
+  // a cursor decoration rather than as artwork.
 
-    // Top-left quadrant of a 400×200 panel: a quarter left of centre, a quarter
-    // above it — so ±0.5 normalised, and −100/−50 px for the glow.
+  it("writes nothing to the stage when the pointer moves over it", () => {
+    const stage = renderStage();
+    const before = stage.getAttribute("style") ?? "";
+
     pointerMove(stage, 100, 50);
-    settle();
-
-    for (const layer of ["far", "mid", "near"]) {
-      expect(read(stage, `--auth-mx-${layer}`), layer).toBe("-0.5");
-      expect(read(stage, `--auth-my-${layer}`), layer).toBe("-0.5");
-    }
-    // The glow is a DOM element, so it travels in real pixels, not user units.
-    expect(read(stage, "--auth-glow-x")).toBe("-100px");
-    expect(read(stage, "--auth-glow-y")).toBe("-50px");
-  });
-
-  it("lags the far layer behind the near one on the way there", () => {
-    // The whole point of three easings. Sampled mid-flight, because at rest all
-    // three sit on the pointer and the difference is invisible.
-    const stage = renderStage();
-
-    pointerMove(stage, 400, 200); // full deflection, bottom-right
-    for (let i = 0; i < 6; i++) tick();
-
-    const far = Number(read(stage, "--auth-mx-far"));
-    const near = Number(read(stage, "--auth-mx-near"));
-    expect(near).toBeGreaterThan(far);
-    expect(far).toBeGreaterThan(0);
-  });
-
-  it("coalesces a burst of samples into one scheduled frame", () => {
-    const stage = renderStage();
-
-    for (let i = 0; i < 10; i++) pointerMove(stage, 200 + i, 100);
-
-    // Ten samples, one frame — the whole reason this bypasses React.
-    expect(queue.size).toBe(1);
-    settle();
-    expect(read(stage, "--auth-glow-x")).toBe("9px");
-  });
-
-  it("clamps to ±1 outside the panel", () => {
-    const stage = renderStage();
-
-    pointerMove(stage, 900, -300);
-    settle();
-
-    expect(read(stage, "--auth-mx-near")).toBe("1");
-    expect(read(stage, "--auth-my-near")).toBe("-1");
-  });
-
-  it("eases back to centre after the pointer leaves", () => {
-    const stage = renderStage();
-    pointerMove(stage, 400, 200);
-    settle();
-    expect(read(stage, "--auth-mx-near")).toBe("1");
-
+    pointerMove(stage, 380, 190);
     fireEvent.pointerLeave(stage);
-    settle();
 
-    // Snapped, not merely asymptotically close: the resting composition has to
-    // be exactly the one a visitor who never moved the mouse sees.
-    expect(read(stage, "--auth-mx-near")).toBe("0");
-    expect(read(stage, "--auth-mx-far")).toBe("0");
-    expect(read(stage, "--auth-glow-x")).toBe("0px");
+    expect(stage.getAttribute("style") ?? "").toBe(before);
+    expect(read(stage, "--auth-glow-x")).toBe("");
   });
 
-  it("stops scheduling frames once it has settled", () => {
-    // An exponential ease never actually arrives; without a floor the loop would
-    // run forever for a decoration nobody is pointing at.
+  it("renders no cursor glow element", () => {
+    expect(renderStage().querySelector(".auth-art__glow")).toBeNull();
+  });
+
+  it("needs no measurement of the panel", () => {
+    // jsdom measures everything as 0×0. The old implementation divided by that
+    // and had to guard against NaN — a NaN custom property invalidates the whole
+    // transform at computed-value time, silently. Nothing measures any more, so
+    // the guard is not needed and its absence must not reintroduce the fault.
     const stage = renderStage();
-    pointerMove(stage, 300, 150);
-    settle();
-
-    expect(queue.size).toBe(0);
-  });
-
-  it("survives a backgrounded tab without teleporting", () => {
-    // A resumed tab delivers one frame with a multi-second delta. Unclamped,
-    // `1 - exp(-dt/tau)` is 1 and the composition jumps to the pointer.
-    const stage = renderStage();
-    pointerMove(stage, 400, 200);
-    tick(30000);
-
-    expect(Number(read(stage, "--auth-mx-far"))).toBeLessThan(1);
-  });
-
-  it("ignores an unmeasurable panel instead of writing NaN", () => {
-    const { container } = render(<LoginArtwork />);
-    const stage = container.querySelector(".auth-art__stage") as HTMLElement;
-    // Left at jsdom's 0×0: dividing by it is where NaN comes from, and a NaN
-    // custom property invalidates the entire transform silently.
     pointerMove(stage, 10, 10);
-    settle();
 
-    expect(read(stage, "--auth-mx-far")).toBe("");
-  });
-
-  it("ignores touch, which has no way back to centre", () => {
-    const stage = renderStage();
-
-    pointerMove(stage, 100, 50, "touch");
-    settle();
-
-    // A finger dragging across the band leaves no pointerleave behind, so the
-    // composition would stay parked wherever it lifted.
-    expect(read(stage, "--auth-mx-far")).toBe("");
+    expect(stage.getAttribute("style") ?? "").not.toMatch(/NaN/);
   });
 });
 
@@ -287,19 +186,6 @@ describe("answering the keyboard", () => {
 describe("prefers-reduced-motion: reduce", () => {
   beforeEach(() => stubMotionPreference(false));
 
-  it("never attaches the pointer handlers", () => {
-    // The CSS rules are inside the opt-in block, so nothing would READ these —
-    // but writing them anyway means the "off" state depends on two things
-    // agreeing instead of one.
-    const stage = renderStage();
-
-    pointerMove(stage, 100, 50);
-    settle();
-
-    expect(queue.size).toBe(0);
-    expect(read(stage, "--auth-mx-far")).toBe("");
-  });
-
   it("does not answer typing", () => {
     // This one MUST be gated in JS: the bursts are Web Animations, which no
     // media query can switch off.
@@ -314,5 +200,6 @@ describe("prefers-reduced-motion: reduce", () => {
     const stage = renderStage();
 
     expect(stage.querySelector(".auth-art__canvas")).not.toBeNull();
+    expect(stage.querySelectorAll(".auth-art__mark").length).toBeGreaterThan(0);
   });
 });

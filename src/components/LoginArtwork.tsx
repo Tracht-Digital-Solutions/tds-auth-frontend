@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   BLUR_LEVELS,
-  FOLLOW_EASE,
   RIPPLE_SLOTS,
   VIEWBOX,
   generateArtwork,
   randomSeed,
   type Artwork,
-  type Drift,
-  type Orbit,
-  type Pulse,
+  type Mark,
+  type Motion,
+  type Pose,
 } from "~/lib/artwork";
 import { onTyping } from "~/lib/artworkSignal";
 
@@ -23,45 +22,69 @@ type ArtStyle = CSSProperties & Record<`--${string}`, string>;
 /*
  * Units live here, not in the generator — it emits plain numbers.
  *
- * `px` inside an SVG element's transform is ONE USER UNIT, so the drift is
+ * `px` inside an SVG element's transform is ONE USER UNIT, so the motion is
  * expressed in viewBox coordinates and scales with the panel, which is what we
  * want. A unitless number in `translate()` is invalid CSS, and because these
  * arrive through `var()` substitution it would take the entire `transform`
  * declaration down with it — silently, with the shape simply never moving.
  */
-const driftVars = (m: Drift): ArtStyle => ({
-  "--auth-dx": `${m.dx}px`,
-  "--auth-dy": `${m.dy}px`,
-  "--auth-rot": `${m.rot}deg`,
-  "--auth-scale": `${m.scale}`,
-  "--auth-dur": `${m.dur}s`,
-  "--auth-delay": `${m.delay}s`,
-});
-
-const orbitVars = (m: Orbit): ArtStyle => ({
-  "--auth-rot": `${m.rot}deg`,
-  "--auth-dur": `${m.dur}s`,
-  "--auth-delay": `${m.delay}s`,
-});
+const motionVars = (m: Motion): ArtStyle => {
+  const timing: ArtStyle = { "--auth-dur": `${m.dur}s`, "--auth-delay": `${m.delay}s` };
+  switch (m.kind) {
+    case "drift":
+      return {
+        ...timing,
+        "--auth-dx": `${m.dx}px`,
+        "--auth-dy": `${m.dy}px`,
+        "--auth-rot": `${m.rot}deg`,
+        "--auth-scale": `${m.scale}`,
+      };
+    case "orbit":
+      return { ...timing, "--auth-rot": `${m.rot}deg` };
+    case "spin":
+      return {
+        ...timing,
+        "--auth-rot": `${m.rot}deg`,
+        // The pivot is the centre of the circle the arc was cut from — NOT its
+        // bounding box, which is what `transform-box: fill-box` would give and
+        // which turns an orbiting arc into a tumbling one.
+        "--auth-ox": `${m.ox}px`,
+        "--auth-oy": `${m.oy}px`,
+      };
+    case "slide":
+      return { ...timing, "--auth-dx": `${m.dx}px`, "--auth-dy": `${m.dy}px` };
+  }
+  return timing;
+};
 
 /**
- * The dimmed end is precomputed rather than written as a `calc()` in the
- * keyframes, so 0% and 100% can be the resting opacity EXACTLY — the loop has to
- * rest where the static composition sits.
+ * The pulse is a MULTIPLIER on the group, not an absolute opacity.
+ *
+ * Each mark's own alpha lives on the drawn node as `stroke-opacity` /
+ * `fill-opacity`, so the loop here runs 1 → `dim` → 1 and the two compose. Two
+ * things fall out of that, both load-bearing: the loop rests at exactly 1, so
+ * its resting state IS the static composition (and under
+ * `prefers-reduced-motion: reduce`, where no keyframe applies, the group is
+ * simply transparent to the value below it) — and the mark's alpha stays a
+ * *presentation attribute*, which author CSS can still override. An inline
+ * `opacity` on this group could not be, and the hover response would have had
+ * nothing left to brighten.
  */
-const pulseVars = (opacity: number, m: Pulse): ArtStyle => ({
-  "--auth-o": `${opacity}`,
-  "--auth-o-low": `${Math.round(opacity * m.dim * 1000) / 1000}`,
-  "--auth-dur": `${m.dur}s`,
-  "--auth-delay": `${m.delay}s`,
-});
+const pulseVars = (dim: number): ArtStyle => ({ "--auth-o-low": `${dim}` });
 
 /**
- * `--auth-depth` stays UNITLESS — the stylesheet multiplies it by the pointer's
- * normalised offset before turning the product into `px`, and `calc()` cannot
- * multiply two lengths.
+ * The hover target. Read by ONE rule that only ever changes state when the
+ * pointer enters or leaves the panel — which is why a CSS transition is the
+ * right tool here, where a pointer-tracking parallax would have restarted it
+ * every frame.
  */
-const depthVar = (depth: number): ArtStyle => ({ "--auth-depth": `${depth}` });
+const poseVars = (p: Pose): ArtStyle => ({
+  "--auth-px": `${p.dx}px`,
+  "--auth-py": `${p.dy}px`,
+  "--auth-prot": `${p.rot}deg`,
+  "--auth-pscale": `${p.scale}`,
+  "--auth-pdelay": `${p.delay}ms`,
+});
 
 /**
  * Deliberately NOT `--auth-dur`: custom properties inherit, and a name shared
@@ -72,35 +95,6 @@ const swayVars = (sway: Artwork["sway"]): ArtStyle => ({
   "--auth-sway": `${sway.deg}deg`,
   "--auth-sway-dur": `${sway.dur}s`,
 });
-
-/** Layer keys, ordered far → near. Each eases at its own `FOLLOW_EASE` rate. */
-const LAYERS = ["far", "mid", "near"] as const;
-
-/**
- * The custom property each layer writes, spelled out rather than built from a
- * template literal. `static-posture.test.ts` cross-checks every `--auth-*` name
- * against `global.css` in both directions by reading this file as TEXT — an
- * interpolated name is invisible to that check, and the failure it guards
- * against (a shape that silently never moves) has no other symptom.
- */
-const LAYER_VARS = {
-  far: ["--auth-mx-far", "--auth-my-far"],
-  mid: ["--auth-mx-mid", "--auth-my-mid"],
-  near: ["--auth-mx-near", "--auth-my-near"],
-} as const;
-
-/**
- * Below this, the eased value is snapped to the target and the loop stops.
- * Without a floor an exponential ease never arrives, so the frame would be
- * scheduled forever — for a decoration nobody is looking at any more.
- */
-const SETTLED = 0.0008;
-/**
- * Clamp on the frame delta the ease integrates over. A backgrounded tab resumes
- * with a multi-second gap, and without this the composition would teleport to
- * the pointer on the first frame back.
- */
-const MAX_STEP_MS = 100;
 
 /** How long after the last keystroke the composition stays "engaged". */
 const ENERGY_HOLD_MS = 900;
@@ -125,43 +119,28 @@ const RIPPLE_MS = 1100;
  * backdrop in CSS, so what the visitor sees is a brand surface that gains
  * shapes a frame later, not a white hole.
  *
- * Purely decorative — `aria-hidden`, unfocusable, and it never announces. It
- * *reacts* (to the pointer and to typing), but it never becomes a control: there
- * is nothing to activate, nothing to focus, and no information carried by the
- * response. See `artworkSignal.ts` for why typing arrives as an event.
+ * **It does not read the pointer's position.** The composition answers the
+ * *presence* of a pointer (a plain CSS `:hover`, one state change, no JS at
+ * all) and it answers typing. It never tracked the cursor well: a disc pinned
+ * under the crosshair reads as a cursor decoration rather than as artwork, and
+ * a parallax bound to the coordinates makes the picture a read-out of where the
+ * mouse is. Both are gone; what is left is a seeded pose the shapes glide into.
+ *
+ * Purely decorative — `aria-hidden`, unfocusable, and it never announces.
+ * See `artworkSignal.ts` for why typing arrives as an event.
  */
 export default function LoginArtwork() {
   const [art, setArt] = useState<Artwork | null>(null);
   /**
-   * Reduced motion is read here rather than left to CSS alone, because two of
-   * the three responses are imperative: the ripple bursts are Web Animations and
-   * the pointer offsets are written straight onto the node. A media query cannot
-   * switch those off — only not starting them can.
+   * Reduced motion is read here rather than left to CSS alone, because the
+   * ripple bursts are Web Animations fired imperatively. A media query cannot
+   * switch those off — only not starting them can. (The hover pose IS pure CSS
+   * and sits inside the same opt-in block, so it needs nothing here.)
    */
   const [motionOk, setMotionOk] = useState(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const rippleRefs = useRef<(SVGCircleElement | null)[]>([]);
-  /**
-   * Where the pointer is, normalised to ±1 about the panel centre. The parallax
-   * works in viewBox units and must scale with the panel, so the pixels are
-   * turned into a fraction here and multiplied by each shape's depth in CSS.
-   */
-  const target = useRef({ x: 0, y: 0 });
-  /**
-   * Where each layer currently IS — one eased position per layer, chasing
-   * `target` at its own rate. The glow chases at the near layer's rate but in
-   * pixels: it is a plain DOM element, so it travels in real distance.
-   */
-  const eased = useRef({
-    far: { x: 0, y: 0 },
-    mid: { x: 0, y: 0 },
-    near: { x: 0, y: 0 },
-  });
-  const frame = useRef(0);
-  const lastFrame = useRef(0);
-  /** Panel size at the last sample, so the glow can convert back to pixels. */
-  const panel = useRef({ width: 0, height: 0 });
   const decay = useRef(0);
   const rippleSlot = useRef(0);
   const lastRipple = useRef(0);
@@ -181,105 +160,6 @@ export default function LoginArtwork() {
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, []);
-
-  /*
-   * THE FOLLOW IS EASED HERE, IN ONE LOOP, AND WRITTEN STRAIGHT TO THE DOM.
-   * Neither half of that is a shortcut; both were arrived at by measuring.
-   *
-   * Not React: a `pointermove` arrives per input sample, up to 120/s on a
-   * high-rate mouse. Routing that through `useState` would re-render 4–7
-   * filtered ribbons, 2–4 rings and every spark on every sample, rebuilding each
-   * shape's style object, to move two numbers that only CSS ever reads.
-   *
-   * Not a CSS transition either, which is the version this replaced. A
-   * transition whose target moves every frame is restarted every frame, and on
-   * fifteen elements that was the single most expensive thing on the page: 49
-   * fps against 59 for the identical transforms driven directly, at 6× CPU
-   * throttling in Chrome against the built `dist/`. The transforms are nearly
-   * free; the transition bookkeeping was not.
-   *
-   * So: three eased positions, one per layer, each an exponential chase toward
-   * the pointer with its own time constant. Six custom properties on ONE element
-   * per frame, which every shape inherits.
-   */
-  const step = useCallback((now: number) => {
-    const stage = stageRef.current;
-    if (!stage) {
-      frame.current = 0;
-      return;
-    }
-    // First frame of a run has no previous timestamp to subtract.
-    const dt = lastFrame.current ? Math.min(now - lastFrame.current, MAX_STEP_MS) : 16;
-    lastFrame.current = now;
-
-    let settled = true;
-    for (const layer of LAYERS) {
-      const at = eased.current[layer];
-      // Frame-rate independent: the fraction covered depends on elapsed TIME,
-      // not on how many frames happened to fire. A plain `* k` per frame would
-      // make the panel feel twice as responsive on a 120 Hz display.
-      const k = 1 - Math.exp(-dt / FOLLOW_EASE[layer]);
-      at.x += (target.current.x - at.x) * k;
-      at.y += (target.current.y - at.y) * k;
-      if (
-        Math.abs(target.current.x - at.x) > SETTLED ||
-        Math.abs(target.current.y - at.y) > SETTLED
-      ) {
-        settled = false;
-      } else {
-        // Snap, so the resting state is exactly the target rather than
-        // asymptotically near it.
-        at.x = target.current.x;
-        at.y = target.current.y;
-      }
-      stage.style.setProperty(LAYER_VARS[layer][0], round(at.x));
-      stage.style.setProperty(LAYER_VARS[layer][1], round(at.y));
-    }
-
-    // The glow rides the near layer's easing but in real pixels — it is a DOM
-    // element, and a percentage in `translate()` would resolve against its own
-    // box rather than the panel's.
-    const near = eased.current.near;
-    stage.style.setProperty("--auth-glow-x", `${round((near.x * panel.current.width) / 2)}px`);
-    stage.style.setProperty("--auth-glow-y", `${round((near.y * panel.current.height) / 2)}px`);
-
-    frame.current = settled ? 0 : requestAnimationFrame(step);
-    if (settled) lastFrame.current = 0;
-  }, []);
-
-  const start = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(step);
-  }, [step]);
-
-  const track = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      // A touch drag over the band would leave the composition parked wherever
-      // the finger lifted, with no pointerleave to bring it home. Hover is a
-      // mouse/pen gesture; treat it as one.
-      if (event.pointerType === "touch") return;
-      const stage = stageRef.current;
-      if (!stage) return;
-      const rect = stage.getBoundingClientRect();
-      // A zero-sized rect (jsdom, or a panel measured mid-layout) would divide
-      // to NaN. NaN in a custom property makes the whole `transform` invalid at
-      // computed-value time: every shape snaps back to the origin, and nothing
-      // is logged.
-      if (rect.width === 0 || rect.height === 0) return;
-      panel.current = { width: rect.width, height: rect.height };
-      target.current = {
-        x: clamp(((event.clientX - rect.left - rect.width / 2) / rect.width) * 2),
-        y: clamp(((event.clientY - rect.top - rect.height / 2) / rect.height) * 2),
-      };
-      start();
-    },
-    [start],
-  );
-
-  /** Pointer gone: aim at centre and let each layer ease its own way back. */
-  const release = useCallback(() => {
-    target.current = { x: 0, y: 0 };
-    start();
-  }, [start]);
 
   /**
    * One keystroke: a ripple (immediate) plus a bump of ambient energy (slow).
@@ -325,31 +205,13 @@ export default function LoginArtwork() {
     return onTyping(pulse);
   }, [motionOk, pulse]);
 
-  // Timers and frames outlive a navigation away from the page otherwise.
-  useEffect(
-    () => () => {
-      if (frame.current) cancelAnimationFrame(frame.current);
-      window.clearTimeout(decay.current);
-    },
-    [],
-  );
+  // The decay timer outlives a navigation away from the page otherwise.
+  useEffect(() => () => window.clearTimeout(decay.current), []);
 
   if (!art) return null;
 
   return (
-    <div
-      className="auth-art__stage"
-      ref={stageRef}
-      // Under `reduce` the handlers are never attached at all, so no offset can
-      // be written and the stylesheet's interaction rules — which live inside
-      // the same opt-in block — have nothing to read either way.
-      onPointerMove={motionOk ? track : undefined}
-      onPointerLeave={motionOk ? release : undefined}
-    >
-      {/* Beneath the composition, so the ribbons stay the top layer and the glow
-          reads as a light source behind them rather than as a smear over them. */}
-      <div className="auth-art__glow" />
-
+    <div className="auth-art__stage" ref={stageRef}>
       <svg
         className="auth-art__canvas"
         viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
@@ -359,6 +221,7 @@ export default function LoginArtwork() {
         aria-hidden="true"
         focusable="false"
         data-seed={art.seed}
+        data-scene={art.scene}
       >
         <defs>
           {BLUR_LEVELS.map((radius, i) => (
@@ -374,9 +237,9 @@ export default function LoginArtwork() {
               // These numbers are viewBox units, and the margin is not cosmetic: the
               // region clips the filter's INPUT as well as its output, so a pixel
               // just inside the visible crop must still be able to reach every
-              // source pixel within ~3σ (51 units at the widest blur). Ribbons now
-              // run OVERHANG=45 past each edge plus half a 24-wide stroke, so a
-              // 70-unit margin is what keeps the left- and right-most visible
+              // source pixel within ~3σ (51 units at the widest blur). Spanning
+              // marks run OVERHANG=45 past each edge plus half a 24-wide stroke, so
+              // a 70-unit margin is what keeps the left- and right-most visible
               // columns from quietly losing part of their colour.
               filterUnits="userSpaceOnUse"
               x={-70}
@@ -392,8 +255,8 @@ export default function LoginArtwork() {
         {/* Outermost: the typing response. Its own group because it is a
             TRANSITION on `transform` and the sway below is an ANIMATION on the
             same property — one element cannot carry both, and the animation
-            would win outright. Scale only ever grows, so the ribbons' overhang
-            can never be pulled inside the frame. */}
+            would win outright. Scale only ever grows, so a spanning mark's
+            overhang can never be pulled inside the frame. */}
         <g className="auth-art__breathe">
           {/* The sway group is animated and carries NO transform attribute of its
               own. Putting the CSS animation on the tilt group below would override
@@ -404,74 +267,29 @@ export default function LoginArtwork() {
             {/* One rotation for the whole composition: cheaper than re-deriving every
                 coordinate, and it varies the read of an otherwise similar layout. */}
             <g transform={`rotate(${art.tilt} ${VIEWBOX / 2} ${VIEWBOX / 2})`}>
-              {/* One group per parallax layer. The group carries nothing but the
-                  binding from its layer's eased position to the `--auth-fx/fy`
-                  the shapes below read, so a shape needs to know only its own
-                  depth — and there are three easings to run, not fifteen. */}
-              <g className="auth-art__layer auth-art__layer--far">
-                {art.ribbons.map((ribbon, i) => (
-                  // Three nested groups, one property each: the outer follows the
-                  // pointer, the inner drifts (animation), and the filtered
-                  // <path> never moves at all. An SVG filter on the very element
-                  // being transformed is the case engines are least likely to
-                  // cache, and at radius 17 that would be a full Gaussian per
-                  // ribbon per frame. Don't "simplify" this by collapsing them.
-                  <g key={i} className="auth-art__follow" style={depthVar(ribbon.depth)}>
-                    <g className="auth-art__ribbon" style={driftVars(ribbon.motion)}>
-                      <path
-                        d={ribbon.d}
-                        fill="none"
-                        stroke={ribbon.hue}
-                        strokeWidth={ribbon.width}
-                        strokeLinecap="round"
-                        opacity={ribbon.opacity}
-                        filter={`url(#auth-art-blur-${ribbon.blur})`}
-                      />
-                    </g>
+              {/* Already in paint order: wash → structure → accent. */}
+              {art.marks.map((mark, i) => (
+                // Three nested elements, one job each: the outer holds the hover
+                // pose (a transition), the inner the ambient motion (an
+                // animation), and the filtered node never moves at all. Both
+                // halves are load-bearing. An animation beats any other
+                // declaration of the same property, so pose and motion cannot
+                // share an element; and an SVG filter on the very element being
+                // transformed is the case engines are least likely to cache — at
+                // radius 17 that would be a full Gaussian per mark per frame.
+                // Don't "simplify" this by collapsing them.
+                <g key={i} className="auth-art__pose" style={poseVars(mark.pose)}>
+                  <g
+                    className={`auth-art__m auth-art__m--${mark.motion.kind}`}
+                    style={{
+                      ...motionVars(mark.motion),
+                      ...(mark.motion.kind === "pulse" ? pulseVars(mark.motion.dim) : null),
+                    }}
+                  >
+                    {renderMark(mark)}
                   </g>
-                ))}
-              </g>
-
-              {/* Thin rings and crisp dots are what keep the blurred ribbons from
-                  reading as a smear — structure first, then somewhere to look.
-                  Both stay sharp: the contrast against the soft ribbons is the depth. */}
-              <g className="auth-art__layer auth-art__layer--mid">
-                {art.rings.map((ring, i) => (
-                  <g key={i} className="auth-art__follow" style={depthVar(ring.depth)}>
-                    <circle
-                      className="auth-art__ring"
-                      style={orbitVars(ring.motion)}
-                      cx={ring.cx}
-                      cy={ring.cy}
-                      r={ring.r}
-                      fill="none"
-                      stroke={ring.hue}
-                      strokeWidth={0.35}
-                      opacity={ring.opacity}
-                    />
-                  </g>
-                ))}
-              </g>
-
-              <g className="auth-art__layer auth-art__layer--near">
-                {art.sparks.map((spark, i) => (
-                  <g key={i} className="auth-art__follow" style={depthVar(spark.depth)}>
-                    <circle
-                      className="auth-art__spark"
-                      style={pulseVars(spark.opacity, spark.motion)}
-                      cx={spark.cx}
-                      cy={spark.cy}
-                      r={spark.r}
-                      fill={spark.hue}
-                      // KEEP the attribute: under `prefers-reduced-motion: reduce` no
-                      // keyframe applies, so this IS the rendering. The resting state is
-                      // then identical to the old static composition by construction,
-                      // rather than by a second rule someone has to remember.
-                      opacity={spark.opacity}
-                    />
-                  </g>
-                ))}
-              </g>
+                </g>
+              ))}
 
               {/* Keystroke bursts. Rendered always and invisible at rest
                   (`opacity=0`), so a keystroke costs an animation and never a
@@ -504,17 +322,69 @@ export default function LoginArtwork() {
   );
 }
 
-/** Keep the normalised offset inside ±1 — the corners of the panel exceed it. */
-function clamp(value: number): number {
-  return Math.max(-1, Math.min(1, Math.round(value * 1000) / 1000));
-}
-
 /**
- * 3dp. Custom properties are re-parsed on every write, so the shortest string
- * that is still smooth at the scale these drive (a hundred-unit viewBox) is the
- * one to send — and it makes the settled value exactly the target rather than
- * `0.9999999`.
+ * The drawn node.
+ *
+ * Its alpha rides on `stroke-opacity`/`fill-opacity` rather than on `opacity`,
+ * and it is a presentation ATTRIBUTE: that is the lowest-priority way to set a
+ * value in SVG, so the hover rules can raise it while the composition still
+ * renders correctly with no stylesheet at all (which is what someone under
+ * `prefers-reduced-motion: reduce` gets).
+ *
+ * The layer class is what the interaction rules key off. Each layer answers
+ * differently on purpose: accents scale, structure firms up (weight + alpha),
+ * and the wash answers with movement ONLY — lifting the wash's alpha under
+ * `screen` is what turns the dark half of the split into a pink wash.
  */
-function round(value: number): string {
-  return `${Math.round(value * 1000) / 1000}`;
+function renderMark(mark: Mark) {
+  const filter = mark.blur >= 0 ? `url(#auth-art-blur-${mark.blur})` : undefined;
+  const className = `auth-art__mark auth-art__mark--${mark.layer}`;
+
+  if (mark.kind === "path") {
+    return (
+      <path
+        className={className}
+        // The resting width, so the hover rule can scale it by a factor instead
+        // of naming an absolute one — the marks it applies to are between 0.3
+        // and 0.7 wide, and a fixed target would SHRINK half of them.
+        style={{ "--auth-w": `${mark.width}` } as ArtStyle}
+        d={mark.d}
+        fill="none"
+        stroke={mark.hue}
+        strokeWidth={mark.width}
+        strokeOpacity={mark.opacity}
+        strokeLinecap="round"
+        filter={filter}
+      />
+    );
+  }
+
+  if (mark.filled) {
+    return (
+      <circle
+        className={className}
+        cx={mark.cx}
+        cy={mark.cy}
+        r={mark.r}
+        fill={mark.hue}
+        fillOpacity={mark.opacity}
+        filter={filter}
+      />
+    );
+  }
+
+  return (
+    <circle
+      className={className}
+      style={{ "--auth-w": `${mark.width}` } as ArtStyle}
+      cx={mark.cx}
+      cy={mark.cy}
+      r={mark.r}
+      fill="none"
+      stroke={mark.hue}
+      strokeWidth={mark.width}
+      strokeOpacity={mark.opacity}
+      filter={filter}
+    />
+  );
 }

@@ -85,20 +85,17 @@
     );
 }
 
-/* The island's own wrapper, filling the panel. It exists so the composition and
-   the cursor glow have a common ancestor to inherit the pointer/typing custom
-   properties from, and so the hover target is owned by the island rather than by
-   the layout. It must NOT create a stacking context (no z-index, no isolation):
-   the `screen` blends below have to reach `.auth-art`'s gradient, and isolating
-   here would silently flatten the whole look. */
+/* The island's own wrapper, filling the panel. It exists so the composition has
+   one common ancestor to inherit the typing energy from, and so the HOVER TARGET
+   is owned by the island rather than by the layout — every interaction rule
+   below hangs off `.auth-art__stage:hover`. It must NOT create a stacking
+   context (no z-index, no isolation): the `screen` blends below have to reach
+   `.auth-art`'s gradient, and isolating here would silently flatten the whole
+   look. */
 .auth-art__stage {
   position: absolute;
   inset: 0;
-  /* Resting state for the two properties read from several rules. The per-layer
-     pointer offsets take theirs from the single fallback in the layer bindings
-     below, so they are not repeated here. */
-  --auth-glow-x: 0px;
-  --auth-glow-y: 0px;
+  /* Resting state for the one property several rules read. */
   --auth-energy: 0;
 }
 
@@ -109,39 +106,6 @@
   height: 100%;
   /* `screen` is what makes overlapping ribbons read as light rather than as
      stacked paint — the whole look depends on it. */
-  mix-blend-mode: screen;
-}
-
-/* The cursor glow: a fixed-size disc TRANSLATED to the pointer, not a radial
-   gradient whose centre is re-authored each frame. Same picture, very different
-   cost — moving a gradient's `at` position repaints the whole panel per frame,
-   moving the element is a composited transform. It is also why the component
-   emits pixel offsets alongside the normalised ones: a percentage in
-   `translate()` resolves against the ELEMENT's box, not the panel's.
-
-   Invisible at rest (`opacity: 0` below the opt-in block), so under reduced
-   motion it is simply not there. */
-.auth-art__glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 34rem;
-  height: 34rem;
-  margin: -17rem 0 0 -17rem;
-  border-radius: 50%;
-  pointer-events: none;
-  opacity: 0;
-  /* `--color-accent-pink`, not `--color-accent`. The panel is a FIXED dark field
-     in both themes while the tokens flip, and the accent's LIGHT value is a deep
-     burgundy (#820933) — screen-blended over navy at any usable alpha that is
-     not a glow, it is a smudge. `-pink` is bright in both themes and is already
-     one of the artwork's six hues, so the glow stays inside the composition's
-     palette instead of introducing a seventh colour. */
-  background: radial-gradient(
-    closest-side,
-    color-mix(in srgb, var(--color-accent-pink) 38%, transparent),
-    transparent 76%
-  );
   mix-blend-mode: screen;
 }
 
@@ -180,116 +144,120 @@
      rotates about, so the two compose without shifting the composition
      off-centre. Both declared explicitly rather than left to an initial value. */
   .auth-art__sway,
-  .auth-art__ribbon,
-  .auth-art__ring {
+  .auth-art__pose,
+  .auth-art__m--drift,
+  .auth-art__m--orbit,
+  .auth-art__m--slide {
     transform-box: view-box;
     transform-origin: 50% 50%;
+  }
+
+  /* The one motion that does NOT pivot on the canvas: an arc segment turns on
+     the centre of the circle it was cut from, which the generator carries as
+     `--auth-ox/oy` in user units. `fill-box` would pivot on the arc's bounding
+     box instead and the orrery would read as tumbling debris. */
+  .auth-art__m--spin {
+    transform-box: view-box;
+    transform-origin: var(--auth-ox, 50px) var(--auth-oy, 50px);
   }
 
   .auth-art__sway {
     animation: auth-art-sway var(--auth-sway-dur, 120s) var(--tds-ease-in-out, ease-in-out)
       infinite;
   }
-  .auth-art__ribbon {
+  .auth-art__m--drift {
     animation: auth-art-drift var(--auth-dur, 45s) var(--tds-ease-in-out, ease-in-out)
       var(--auth-delay, 0s) infinite;
   }
-  .auth-art__ring {
+  /* `spin` shares the keyframes and differs only in its pivot above — two
+     identical keyframe blocks would be dead weight, not documentation. */
+  .auth-art__m--orbit,
+  .auth-art__m--spin {
     animation: auth-art-orbit var(--auth-dur, 90s) var(--tds-ease-in-out, ease-in-out)
       var(--auth-delay, 0s) infinite;
   }
-  .auth-art__spark {
+  .auth-art__m--slide {
+    animation: auth-art-slide var(--auth-dur, 40s) var(--tds-ease-in-out, ease-in-out)
+      var(--auth-delay, 0s) infinite;
+  }
+  .auth-art__m--pulse {
     animation: auth-art-pulse var(--auth-dur, 10s) var(--tds-ease-in-out, ease-in-out)
       var(--auth-delay, 0s) infinite;
   }
 
-  /* ---- Interaction: the pointer ----
+  /* ---- Interaction: hover ----
 
-     Every shape sits in a `.auth-art__follow` wrapper that translates toward
-     (or, for the rings, away from) the pointer by its own seeded depth. Three
-     things are load-bearing:
+     The composition answers the PRESENCE of a pointer, never its position.
+     There is no coordinate anywhere in this file and no rAF loop behind it: one
+     `:hover` state change moves every mark into a seeded target pose and back.
 
-     - There is NO `transition` here, and that is deliberate. The obvious
-       implementation eases the follow with one, but the target moves every
-       frame while the pointer does, so the transition is restarted every frame
-       on all fifteen shapes — measured at 49 fps against 59 for the identical
-       transforms driven directly (6× CPU throttling, Chrome, built `dist/`).
-       The easing lives in LoginArtwork.tsx's rAF loop instead: three eased
-       positions, one per layer, bound to `--auth-fx/fy` just below.
-     - `--auth-depth` is unitless and becomes `px` only after the multiply:
-       `calc()` cannot multiply two lengths, and one `px` inside an SVG
-       transform is one viewBox user unit, so the travel scales with the panel.
-     - The wrapper is a separate element from `.auth-art__ribbon`, which is
-       already animating `transform`. One element cannot carry both — the
-       animation would win and the parallax would silently never appear. */
-  .auth-art__layer--far {
-    --auth-fx: var(--auth-mx-far, 0);
-    --auth-fy: var(--auth-my-far, 0);
-  }
-  .auth-art__layer--mid {
-    --auth-fx: var(--auth-mx-mid, 0);
-    --auth-fy: var(--auth-my-mid, 0);
-  }
-  .auth-art__layer--near {
-    --auth-fx: var(--auth-mx-near, 0);
-    --auth-fy: var(--auth-my-near, 0);
+     A `transition` is the right tool here, and that is worth stating because
+     the version this replaced argued the opposite. It did so correctly: a
+     parallax target moves every frame while the pointer does, so the transition
+     is *restarted* every frame on every shape (measured at 49 fps against 59
+     for the same transforms driven from a rAF loop). Nothing about that applies
+     to a value that changes exactly twice per visit — on enter and on leave.
+
+     `--auth-p*` are the seeded pose components; the stagger (`--auth-pdelay`)
+     is what keeps thirty marks from snapping into place in unison. It is capped
+     low in the generator because the same delay applies on the way back.
+
+     The pose wrapper is a SEPARATE element from `.auth-art__m--*`, which is
+     already animating `transform`. One element cannot carry both — a running
+     animation beats every other declaration of the same property, so the pose
+     would silently never appear. */
+  .auth-art__pose {
+    transition: transform var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out)
+      var(--auth-pdelay, 0ms);
   }
 
-  .auth-art__follow {
-    transform: translate(
-      calc(var(--auth-fx, 0) * var(--auth-depth, 0) * 1px),
-      calc(var(--auth-fy, 0) * var(--auth-depth, 0) * 1px)
-    );
-  }
+  /* Hover firms up the structure and never touches the wash. Wash alpha is the
+     one knob that blows the panel out under `screen` (see BLUR_ALPHA in
+     artwork.ts — lifting it took mean luminance from 44 to 59 and turned the
+     dark half of the split pink), so the wash answers with movement only. The
+     structure is a few hundred crisp pixels: it can brighten for free.
 
-  /* Hover raises the structure, never the ribbons. Ribbon alpha is the one knob
-     that washes the panel out under `screen` (see BLUR_ALPHA in artwork.ts —
-     lifting it took mean luminance from 44 to 59 and turned the dark half of the
-     split pink), so the ribbons answer the pointer with movement only. The
-     rings and sparks are a few hundred crisp pixels: they can brighten without
-     touching the field. */
-  .auth-art__ring {
+     `--auth-w` carries the mark's resting width so the hover state can scale it
+     by a FACTOR. These marks are 0.3–0.7 wide depending on the scene, and an
+     absolute target would thin half of them out. */
+  .auth-art__mark--structure {
     transition:
       stroke-width var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out),
-      opacity var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
-  }
-  .auth-art__stage:hover .auth-art__ring {
-    stroke-width: 0.55;
-    opacity: 0.62;
+      stroke-opacity var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
   }
 
-  /* Sparks answer with SCALE, not opacity: their opacity is already driven by
-     `auth-art-pulse`, and a running animation beats a transition outright — the
-     declaration would be ignored with nothing to show for it. Scale is free
-     here, and `fill-box` makes it grow about the dot's own centre rather than
-     the canvas centre. */
-  .auth-art__spark {
+  /* Accents answer with SCALE, not opacity: theirs is already driven by
+     `auth-art-pulse` on the group above, and a running animation beats a
+     transition outright — the declaration would be ignored with nothing to show
+     for it. `fill-box` makes it grow about the dot's own centre rather than the
+     canvas centre. */
+  .auth-art__mark--accent {
     transform-box: fill-box;
     transform-origin: 50% 50%;
     transform: scale(calc(1 + var(--auth-energy, 0) * 0.55));
     transition: transform var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
   }
-  .auth-art__stage:hover .auth-art__spark {
-    transform: scale(calc(1.35 + var(--auth-energy, 0) * 0.55));
-  }
 
-  /* No `:focus-within` partner for these `:hover`s, and that is the one case the
-     repo-wide rule does not cover: the stage is `aria-hidden` decoration with
-     nothing focusable inside it, so the pseudo-class could never match. */
-  .auth-art__stage:hover .auth-art__glow {
-    opacity: calc(0.62 + var(--auth-energy, 0) * 0.28);
-  }
+  /* Real pointing devices only. A tap on a touch screen latches `:hover` until
+     something else is tapped, so the composition would sit in its pose
+     permanently — the same reason the previous implementation ignored
+     `pointerType: "touch"`, now expressed where it belongs.
 
-  .auth-art__glow {
-    /* Typing lights the panel even with the pointer nowhere near it — the glow
-       then sits at the centre, where `--auth-glow-*` rest. */
-    opacity: calc(var(--auth-energy, 0) * 0.5);
-    /* Position only — the same rAF loop that eases the layers eases this, so a
-       transition here would be the per-frame restart the shapes just avoided.
-       The opacity transition is fine: it fires on a state change, not per
-       frame. */
-    transform: translate3d(var(--auth-glow-x, 0px), var(--auth-glow-y, 0px), 0);
-    transition: opacity var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
+     No `:focus-within` partner for these `:hover`s, and that is the one case
+     the repo-wide rule does not cover: the stage is `aria-hidden` decoration
+     with nothing focusable inside it, so the pseudo-class could never match. */
+  @media (hover: hover) and (pointer: fine) {
+    .auth-art__stage:hover .auth-art__pose {
+      transform: translate(var(--auth-px, 0px), var(--auth-py, 0px))
+        rotate(var(--auth-prot, 0deg)) scale(var(--auth-pscale, 1));
+    }
+    .auth-art__stage:hover .auth-art__mark--structure {
+      stroke-width: calc(var(--auth-w, 0.4) * 1.7);
+      stroke-opacity: 0.72;
+    }
+    .auth-art__stage:hover .auth-art__mark--accent {
+      transform: scale(calc(1.35 + var(--auth-energy, 0) * 0.55));
+    }
   }
 
   /* ---- Interaction: typing ----
@@ -351,10 +319,23 @@
     transform: rotate(var(--auth-rot, 0deg));
   }
 }
+@keyframes auth-art-slide {
+  0%,
+  100% {
+    transform: translate(0px, 0px);
+  }
+  50% {
+    transform: translate(var(--auth-dx, 0px), var(--auth-dy, 0px));
+  }
+}
+/* A MULTIPLIER on the group, resting at exactly 1. The mark's own alpha lives
+   on the drawn node as `stroke-opacity`/`fill-opacity`, so this loop composes
+   with it — and under `reduce`, where no keyframe applies, the group is simply
+   transparent and the node's own value is the whole rendering. */
 @keyframes auth-art-pulse {
   0%,
   100% {
-    opacity: var(--auth-o, 1);
+    opacity: 1;
   }
   50% {
     opacity: var(--auth-o-low, 1);

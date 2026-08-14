@@ -163,7 +163,13 @@ describe("login chrome", () => {
     // loop off. A loop declared outside the opt-in block runs once, instantly,
     // and freezes on its final keyframe, which is the one reduced-motion failure
     // an audit never looks for.
-    for (const name of ["auth-art-drift", "auth-art-orbit", "auth-art-pulse", "auth-art-sway"]) {
+    for (const name of [
+      "auth-art-drift",
+      "auth-art-orbit",
+      "auth-art-slide",
+      "auth-art-pulse",
+      "auth-art-sway",
+    ]) {
       expect(noPreferenceBlock, `${name} must sit inside the opt-in block`).toContain(name);
     }
     expect(globalCss.replace(noPreferenceBlock, "")).not.toMatch(/animation:[^;]*infinite/);
@@ -175,9 +181,9 @@ describe("login chrome", () => {
     // is logged. Checked in both directions — a variable declared and never read
     // is dead weight the next reader will trust.
     //
-    // The stylesheet declares a few of these itself (the resting state, and the
-    // per-layer `--auth-fx/fy` binding), so those count as supplied. What must
-    // never happen is a `var()` that NOTHING sets.
+    // The stylesheet declares a couple of these itself (the resting energy), so
+    // those count as supplied. What must never happen is a `var()` that NOTHING
+    // sets.
     const declared = new Set([
       ...[...artwork.matchAll(/"(--auth-[a-z-]+)"/g)].map((m) => m[1]!),
       ...[...globalCss.matchAll(/^\s*(--auth-[a-z-]+):/gm)].map((m) => m[1]!),
@@ -190,13 +196,16 @@ describe("login chrome", () => {
     expect([...new Set(written)].filter((name) => !used.has(name))).toEqual([]);
   });
 
-  it("never eases the follow with a per-frame CSS transition", () => {
-    // The pointer target moves every frame, so a `transition` on the follow
-    // wrapper is restarted every frame on all fifteen shapes — measured at 49
-    // fps against 59 for the same transforms driven from the rAF loop. Nothing
-    // about the picture changes, so this only ever shows up in a profile.
-    expect(ruleBody(".auth-art__follow")).not.toMatch(/transition:/);
-    expect(artwork).toMatch(/1 - Math\.exp\(-dt \/ FOLLOW_EASE\[layer\]\)/);
+  it("never reads the pointer's position", () => {
+    // The composition answers the PRESENCE of a pointer, never its coordinates.
+    // Both halves of the old behaviour looked fine on screen and were the
+    // problem: a rAF loop wrote normalised offsets onto the stage for a
+    // parallax, and a disc was translated to sit under the crosshair. Either
+    // one coming back is a design regression, not a bug, so nothing downstream
+    // would ever fail.
+    expect(artwork).not.toMatch(/clientX|getBoundingClientRect|requestAnimationFrame/);
+    expect(artwork).not.toMatch(/onPointer(Move|Leave|Enter)/);
+    expect(globalCss).not.toMatch(/--auth-glow|auth-art__glow|auth-art__follow/);
   });
 
   it("sizes the blur filter region in user space, not against the bbox", () => {
@@ -219,8 +228,8 @@ describe("login chrome", () => {
     // keyframe set, a `transition` is not touched at all by tds-shared's
     // `reduce` clamp, so nothing downstream would catch it.
     for (const rule of [
-      ".auth-art__follow",
-      ".auth-art__layer--far",
+      ".auth-art__pose",
+      ".auth-art__mark--accent",
       ".auth-art__breathe",
       ".auth-art__ripple",
       ".auth-art__stage:hover",
@@ -229,28 +238,41 @@ describe("login chrome", () => {
     }
   });
 
-  it("gates the imperative responses in JS as well", () => {
-    // Two of the three responses cannot be stopped by a media query: the pointer
-    // offsets are written straight onto the node and the keystroke bursts are
-    // Web Animations. Only not starting them switches those off.
+  it("gates the imperative response in JS as well", () => {
+    // The keystroke bursts are Web Animations, which no media query can switch
+    // off. (The hover pose is pure CSS and lives inside the opt-in block above,
+    // which is why nothing in the component touches it.)
     expect(artwork).toMatch(/matchMedia\("\(prefers-reduced-motion: no-preference\)"\)/);
-    expect(artwork).toMatch(/onPointerMove=\{motionOk \?/);
+    expect(artwork).toMatch(/if \(!motionOk\) return;\s*\n\s*return onTyping\(pulse\)/);
   });
 
-  it("keeps the parallax on its own group, off the drifting one", () => {
-    // `.auth-art__ribbon` already animates `transform`, and an animation beats
-    // any other declaration of the same property outright — collapsing the two
-    // groups makes the parallax silently never appear.
-    expect(ruleBody(".auth-art__follow")).toMatch(/transform:\s*translate/);
-    expect(ruleBody(".auth-art__follow")).not.toMatch(/animation:/);
-    expect(artwork).toMatch(/className="auth-art__follow"[\s\S]{0,200}auth-art__ribbon/);
+  it("limits the hover response to real pointing devices", () => {
+    // A tap latches `:hover` on a touch screen until something else is tapped,
+    // so the composition would sit in its pose permanently — with no way back,
+    // because there is no `pointerleave` behind a finger that lifted.
+    expect(noPreferenceBlock).toMatch(/@media \(hover: hover\) and \(pointer: fine\)/);
+    const touchGate = noPreferenceBlock.indexOf("@media (hover: hover)");
+    expect(noPreferenceBlock.indexOf(".auth-art__stage:hover")).toBeGreaterThan(touchGate);
   });
 
-  it("moves the glow by transform rather than re-authoring its gradient", () => {
-    // The pointer writes at frame rate. Moving a radial gradient's `at` position
-    // repaints the whole panel every frame; moving the element is composited.
-    expect(globalCss).toMatch(/transform:\s*translate3d\(var\(--auth-glow-x/);
-    expect(ruleBody(".auth-art__glow")).not.toMatch(/radial-gradient\([^)]*--auth-m/);
+  it("keeps the hover pose on its own group, off the animated one", () => {
+    // `.auth-art__m--*` already animates `transform`, and an animation beats any
+    // other declaration of the same property outright — collapsing the two
+    // groups makes the pose silently never appear.
+    expect(ruleBody(".auth-art__pose")).toMatch(/transition:\s*transform/);
+    expect(ruleBody(".auth-art__pose")).not.toMatch(/animation:/);
+    expect(artwork).toMatch(/className="auth-art__pose"[\s\S]{0,300}auth-art__m--/);
+  });
+
+  it("keeps each mark's alpha overridable by the hover rules", () => {
+    // As a presentation attribute (`stroke-opacity`/`fill-opacity`), not as an
+    // inline `opacity` on the group: inline styles beat author CSS, so the
+    // structure's hover brightening would be silently ignored. The pulse
+    // keyframes therefore rest at 1 and multiply, rather than naming an
+    // absolute opacity.
+    expect(artwork).toMatch(/strokeOpacity=\{mark\.opacity\}/);
+    expect(artwork).toMatch(/fillOpacity=\{mark\.opacity\}/);
+    expect(globalCss).toMatch(/@keyframes auth-art-pulse\s*\{\s*0%,\s*100%\s*\{\s*opacity:\s*1;/);
   });
 
   it("keeps the screen blend the composition is built on", () => {
