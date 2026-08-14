@@ -6,6 +6,44 @@ import { loginWithPasskey, passkeysSupported } from "~/lib/passkeys";
 import { resolveTarget } from "~/lib/redirect";
 
 /**
+ * Lucide `eye` / `eye-off`, hand-inlined — this site pulls in no icon library,
+ * and two paths do not justify one. Purely decorative: the button carries the
+ * accessible name, so these stay `aria-hidden`.
+ */
+const iconProps = {
+  width: 18,
+  height: 18,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+  focusable: false,
+} as const;
+
+function EyeIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+      <path d="m2 2 20 20" />
+    </svg>
+  );
+}
+
+/**
  * Central login form. On mount it honours an existing shared session (the
  * `Domain=.tracht-digital.de` cookie) and walks straight through to the target —
  * so a user already logged in on one panel never sees the form. On submit it
@@ -18,6 +56,9 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
+  // Momentary, never a toggle: the password is legible only for as long as the
+  // button is physically held down (see the reveal button below).
+  const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   // Feature detection has to happen after hydration: the server-rendered HTML
@@ -39,6 +80,30 @@ export default function LoginForm() {
   useEffect(() => {
     setCanUsePasskeys(passkeysSupported());
   }, []);
+
+  /**
+   * Release the reveal GLOBALLY, not just on the button.
+   *
+   * The press can end anywhere: the pointer may be dragged off the button
+   * before it is lifted, the browser may steal it (a touch turning into a
+   * scroll fires `pointercancel`), or the window may lose focus while the
+   * finger is still down. Every one of those leaves an `onPointerUp` on the
+   * button unfired — and the failure mode is a password sitting on screen in
+   * plain text, which is exactly what this control must never do. The listeners
+   * exist only while something is actually revealed.
+   */
+  useEffect(() => {
+    if (!revealed) return;
+    const conceal = () => setRevealed(false);
+    window.addEventListener("pointerup", conceal);
+    window.addEventListener("pointercancel", conceal);
+    window.addEventListener("blur", conceal);
+    return () => {
+      window.removeEventListener("pointerup", conceal);
+      window.removeEventListener("pointercancel", conceal);
+      window.removeEventListener("blur", conceal);
+    };
+  }, [revealed]);
 
   // On-mount SSO: already authenticated anywhere → forward immediately.
   useEffect(() => {
@@ -161,19 +226,53 @@ export default function LoginForm() {
           required
         />
       </label>
+      {/* The reveal button lives INSIDE the label, which is safe: label
+          activation is skipped when the click target is interactive content,
+          so pressing the eye does not also re-focus the input. The input stays
+          the label's control because it is the first labelable descendant. */}
       <label>
         Passwort
-        <input
-          className="field-boxed"
-          type="password"
-          value={password}
-          onChange={(ev) => {
-            setPassword(ev.target.value);
-            signalTyping();
-          }}
-          autoComplete="current-password"
-          required
-        />
+        <span className="auth-password">
+          <input
+            className="field-boxed auth-password__input"
+            type={revealed ? "text" : "password"}
+            value={password}
+            onChange={(ev) => {
+              setPassword(ev.target.value);
+              signalTyping();
+            }}
+            autoComplete="current-password"
+            required
+          />
+          {/* Hold to read, release to mask — deliberately NOT a toggle, so an
+              unlocked password can never be left standing on screen.
+              `preventDefault` on pointerdown suppresses the focus that the
+              compatibility mousedown would move here, keeping the caret in the
+              field; the keyboard path (Enter/Space held) is handled separately
+              because it produces no pointer events at all. */}
+          <button
+            className="auth-password__reveal"
+            type="button"
+            aria-label="Passwort anzeigen, solange gedrückt gehalten wird"
+            title="Gedrückt halten, um das Passwort zu prüfen"
+            data-revealed={revealed ? "true" : "false"}
+            onPointerDown={(ev) => {
+              ev.preventDefault();
+              setRevealed(true);
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key !== "Enter" && ev.key !== " ") return;
+              ev.preventDefault(); // Space would scroll the page
+              if (!ev.repeat) setRevealed(true);
+            }}
+            onKeyUp={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") setRevealed(false);
+            }}
+            onBlur={() => setRevealed(false)}
+          >
+            {revealed ? <EyeIcon /> : <EyeOffIcon />}
+          </button>
+        </span>
       </label>
       {/* Explicit id/htmlFor rather than a wrapping <label>: the wrapper would
           be a direct child of `.auth-form` and inherit the stacked, 600-weight

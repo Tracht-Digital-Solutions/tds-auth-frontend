@@ -42,6 +42,30 @@ in one place.
   the panels trade it at `POST /refresh` (see `tds-auth-api`'s AGENTS.md for why a longer
   JWT would be a longer *non-revocable* credential). Nothing here needs to know that
   beyond passing the flag.
+- **The password field can be read while the eye button is HELD DOWN** — and only then
+  (`.auth-password__reveal` in `LoginForm.tsx`). It is a momentary control, not a toggle:
+  press (pointer, or Enter/Space on the focused button) swaps the input to `type="text"`,
+  release swaps it back. A plain click therefore leaves the field masked, which is the
+  point — a toggle can be switched on and forgotten, and this page is often opened on a
+  shared or projected screen.
+  - **The release is watched on the `window`, not on the button.** A press can end
+    anywhere: the pointer may be dragged off before it is lifted, a touch may turn into a
+    scroll (`pointercancel`), or the window may lose focus with the finger still down. Any
+    of those leaves the button's own `onPointerUp` unfired — and the failure mode is a
+    plaintext password left standing on screen, with nothing to report it. The listeners
+    are attached only while something is actually revealed; `LoginForm.test.tsx` pins each
+    of those exits separately.
+  - **`preventDefault()` on `pointerdown`** suppresses the focus the compatibility
+    `mousedown` would move to the button, so the caret stays in the password field and
+    typing can continue straight after the check. The keyboard path produces no pointer
+    events at all and is handled by its own `keydown`/`keyup` pair (plus `onBlur`, for a
+    key held while focus leaves).
+  - **`type="button"`**, same trap as the passkey button below — a bare `<button>` inside
+    the form would submit it, so checking the password would attempt a login.
+  - The button is **not `.btn`**: that primitive's 44px min-height and padding would burst
+    the 40px field it sits inside. Its geometry is local (`global.css`), and the
+    `pointer: coarse` block grows it to 44×44 in step with `.field-boxed` — verified in
+    Chrome, since a narrow desktop viewport does not match that query.
 - **Passkeys** (`src/lib/passkeys.ts`, `/passkeys`): sign-in is **usernameless** — the
   request carries no `allowCredentials`, the authenticator offers its discoverable
   credentials for `tracht-digital.de` and the user picks one. So there is no email field
@@ -326,7 +350,10 @@ in one place.
   `~/lib/auth` mocked at the module boundary. On-mount SSO (an existing session must
   forward *without* rendering the form), the `mustChangePassword` branch from both sources,
   `?next=` propagation into `/passwort`, the post-login `/me` re-confirmation, and every
-  status→message mapping.
+  status→message mapping. `LoginForm.test.tsx` also pins the hold-to-reveal button from
+  every direction a press can end (release on the button, release after dragging off,
+  `pointercancel`, window blur, key up, blur while a key is held) plus the two shapes it
+  must never take: a toggle, and a submit.
 - **`src/lib/artwork.test.ts`** — the generator's *range*, not one picture, and it sweeps
   300 seeds **in each of the four scenes**: every seed produces a composed frame (all
   three layers filled, marks handed over in paint order, bounded counts, no NaN in a
