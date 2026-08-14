@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { stubLocation, type StubbedLocation } from "~/test-support/location";
 import { TYPING_EVENT } from "~/lib/artworkSignal";
@@ -237,10 +237,12 @@ describe("submitting credentials", () => {
   it("disables the button and swaps in a spinner while in flight", async () => {
     await renderForm();
     login.mockReturnValue(new Promise(() => {})); // never settles
+    // Grabbed BEFORE the click: in flight the label is swapped for the spinner,
+    // so the button has no accessible name left to query it by.
+    const button = screen.getByRole("button", { name: "Anmelden" });
 
     await submitCredentials();
 
-    const button = screen.getByRole("button");
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByTestId("spinner").getAttribute("data-size")).toBe("sm");
   });
@@ -270,7 +272,9 @@ describe("login failures", () => {
     await submitCredentials();
 
     await screen.findByText("E-Mail oder Passwort ist falsch.");
-    expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Anmelden" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it("shows a network message when the request throws", async () => {
@@ -289,7 +293,7 @@ describe("login failures", () => {
     await screen.findByText("E-Mail oder Passwort ist falsch.");
 
     login.mockReturnValue(new Promise(() => {}));
-    await userEvent.setup({ delay: null }).click(screen.getByRole("button"));
+    await userEvent.setup({ delay: null }).click(screen.getByRole("button", { name: "Anmelden" }));
 
     await waitFor(() => expect(screen.queryByText("E-Mail oder Passwort ist falsch.")).toBeNull());
   });
@@ -324,6 +328,113 @@ describe("the artwork signal", () => {
     window.removeEventListener(TYPING_EVENT, seen);
 
     expect(seen).not.toHaveBeenCalled();
+  });
+});
+
+describe("hold-to-reveal on the password field", () => {
+  /**
+   * The whole point of this control is that it is MOMENTARY. Every test here
+   * asserts the same thing from a different direction: whatever ends the press
+   * — a release on the button, a release somewhere else after dragging off, a
+   * cancelled touch, the window losing focus, a key going up — must put the
+   * mask back. A miss in any of them leaves a plaintext password on screen,
+   * and nothing else in the app would report that.
+   */
+  const revealButton = () => screen.getByRole("button", { name: /Passwort anzeigen/ });
+  const passwordType = () => (screen.getByLabelText("Passwort") as HTMLInputElement).type;
+
+  async function renderWithPassword(value = "hunter2hunter2") {
+    await renderForm();
+    await userEvent.setup({ delay: null }).type(screen.getByLabelText("Passwort"), value);
+  }
+
+  it("keeps the field masked until the button is held", async () => {
+    await renderWithPassword();
+
+    expect(passwordType()).toBe("password");
+
+    fireEvent.pointerDown(revealButton());
+
+    expect(passwordType()).toBe("text");
+    // Revealing must not disturb what was typed.
+    expect((screen.getByLabelText("Passwort") as HTMLInputElement).value).toBe("hunter2hunter2");
+  });
+
+  it("masks again when the button is released", async () => {
+    await renderWithPassword();
+    fireEvent.pointerDown(revealButton());
+
+    fireEvent.pointerUp(revealButton());
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it("masks again when the pointer is released away from the button", async () => {
+    // Press, drag off, release: the button's own pointerup never fires, which
+    // is why the release is watched on the window.
+    await renderWithPassword();
+    fireEvent.pointerDown(revealButton());
+
+    fireEvent.pointerUp(window);
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it("masks again when the press is cancelled (a touch that became a scroll)", async () => {
+    await renderWithPassword();
+    fireEvent.pointerDown(revealButton());
+
+    fireEvent.pointerCancel(window);
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it("masks again when the window loses focus mid-press", async () => {
+    await renderWithPassword();
+    fireEvent.pointerDown(revealButton());
+
+    fireEvent.blur(window);
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it.each([["Enter"], [" "]])("reveals while %s is held and masks on release", async (key) => {
+    await renderWithPassword();
+    const button = revealButton();
+
+    fireEvent.keyDown(button, { key });
+    expect(passwordType()).toBe("text");
+
+    fireEvent.keyUp(button, { key });
+    expect(passwordType()).toBe("password");
+  });
+
+  it("masks again when focus leaves the button while a key is held", async () => {
+    await renderWithPassword();
+    fireEvent.keyDown(revealButton(), { key: " " });
+
+    fireEvent.blur(revealButton());
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it("is not a toggle: a plain click leaves the password masked", async () => {
+    await renderWithPassword();
+
+    await userEvent.setup({ delay: null }).click(revealButton());
+
+    expect(passwordType()).toBe("password");
+  });
+
+  it("never submits the form", async () => {
+    // A bare <button> inside a <form> defaults to type="submit" — checking the
+    // password would fire a login attempt with it.
+    await renderWithPassword();
+
+    await userEvent.setup({ delay: null }).click(revealButton());
+
+    expect((revealButton() as HTMLButtonElement).type).toBe("button");
+    expect(login).not.toHaveBeenCalled();
   });
 });
 

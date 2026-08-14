@@ -432,6 +432,64 @@
   margin-top: 0.25rem;
 }
 
+/* ---- Passwortfeld mit "gedrückt halten zum Anzeigen" ----
+   The button sits INSIDE the field's box rather than beside it, so the row
+   keeps reading as one control. It is not `.btn`: that primitive carries a
+   44px min-height and its own padding/radius, which would burst the 40px
+   field. Geometry is therefore local — and the hit area is still 44×44 on
+   the mobile breakpoint below, where the field grows to match. */
+.auth-password {
+  position: relative;
+  display: block;
+}
+.auth-password__input {
+  /* Room for the button, so a long password never runs underneath it. */
+  padding-right: 3rem;
+}
+.auth-password__reveal {
+  position: absolute;
+  /* Inset by the field's 1px border so the button never overlaps it. */
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--tds-radius-input);
+  color: var(--color-muted);
+  cursor: pointer;
+  /* A press-and-hold must not select the label text or raise the touch
+     callout/magnifier — both would fight the gesture this control is. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: color var(--tds-dur-base) var(--tds-ease-out);
+}
+.auth-password__reveal:hover {
+  color: var(--color-ink);
+}
+/* Held down: the accent is the only signal that the field is currently
+   legible, so it must not be the same colour as the hover state. */
+.auth-password__reveal[data-revealed="true"] {
+  color: var(--color-accent);
+}
+/* Same breakpoint tds-shared uses to grow `.field-boxed` to 44px: on a touch
+   device the button has to grow with it, in BOTH axes, or the one control on
+   this form that is operated by holding it down is the one under the platform
+   minimum. */
+@media (pointer: coarse) {
+  .auth-password__input {
+    padding-right: 3.25rem;
+  }
+  .auth-password__reveal {
+    width: 2.75rem;
+  }
+}
+
 /* ---- "30 Tage angemeldet bleiben" ----
    Its own row directly under the password field and tightened against it,
    because it modifies THAT field's consequence. It used to sit in the form's
