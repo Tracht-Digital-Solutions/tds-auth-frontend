@@ -124,7 +124,26 @@ describe("build configuration", () => {
 describe("font loading", () => {
   it("imports Fontsource from the layout frontmatter (so Vite emits the woff2)", () => {
     expect(layout).toMatch(/import "@fontsource\/lato\/400\.css";/);
-    expect(layout).toMatch(/import "@fontsource-variable\/geist";/);
+    expect(layout).toMatch(/import "@fontsource-variable\/plus-jakarta-sans";/);
+  });
+
+  it("is on the canonical type stack, not this site's old Geist", () => {
+    // Lato display / Plus Jakarta Sans body is the stack every other TDS
+    // surface renders. This one shipped Geist, so the login read as a
+    // different product than the panel it hands the user to.
+    //
+    // Matches the IMPORT, not the word: the layout carries a comment saying
+    // why Geist is gone, and that comment is worth keeping.
+    expect(layout).not.toMatch(/import\s+["'][^"']*geist/i);
+    expect(pkg.dependencies).not.toHaveProperty("@fontsource-variable/geist");
+  });
+
+  it("never re-declares a font token in global.css", () => {
+    // The absence of this assertion is what let the divergence happen: the
+    // local `:root` block silently out-ranked base.css's `@theme inline`
+    // tokens, so the site could name any face it liked and nothing compared
+    // the two. Geometry and type belong to the shared layer.
+    expect(globalCss).not.toMatch(/^\s*--font-(display|body|mono):/m);
   });
 
   it("never @imports a Fontsource stylesheet from CSS", () => {

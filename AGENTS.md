@@ -324,6 +324,17 @@ in one place.
   Vite plugin. Deleting that file silently ships unstyled output.
 - **Fontsource fonts are JS imports in `Layout.astro`**, never CSS `@import` in
   `global.css` — `@tailwindcss/postcss` wouldn't rebase the woff2 URLs and every font 404s.
+- **The type stack is the canonical one: Lato display / Plus Jakarta Sans body.**
+  Until 0.13.0 this site shipped **Geist** as its body face and re-declared
+  `--font-display`/`--font-body` in a local `:root` block to reach it — so the
+  login rendered in a face no other TDS surface uses, and `static-posture.test.ts`
+  actively *pinned* the Geist import in place. That is the exact duplication the
+  shared library exists to remove: the local block silently out-ranked base.css's
+  `@theme inline` tokens, so this repo could name any face it liked and nothing
+  compared the two. Both tokens now come from tds-shared; the test asserts
+  `global.css` declares **no** `--font-*` token at all.
+  JetBrains Mono is deliberately not installed — `--font-mono` has zero call
+  sites here, and an unused font package is pure payload.
 - **`vite.build` spreads `tdsViteBuild`** (from `tds-shared/astro`) — pins `cssTarget` so
   lightningcss keeps the header `backdrop-filter` prefix. Don't hand-author it back.
 - **Astro inline `<script>`/`<style>` bodies are raw** — never wrap in `` {`...`} ``.

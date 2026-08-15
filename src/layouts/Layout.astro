@@ -5,7 +5,13 @@
 import "@fontsource/lato/400.css";
 import "@fontsource/lato/700.css";
 import "@fontsource/lato/900.css";
-import "@fontsource-variable/geist";
+// Plus Jakarta Sans, not Geist: the canonical body face for every TDS surface.
+// This site shipped Geist and re-declared --font-body locally to reach it, so
+// the login was the one product rendering in a different face from the panels,
+// the portal, the blog and the landingpage. JetBrains Mono is deliberately NOT
+// imported — `--font-mono` has no call site in this repo, and an unused font
+// package is pure payload.
+import "@fontsource-variable/plus-jakarta-sans";
 import "~/styles/global.css";
 import { ThemeToggle, CookieNotice } from "@tracht-digital-solutions/tds-shared/components";
 import LoginArtwork from "~/components/LoginArtwork.tsx";

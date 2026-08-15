@@ -24,10 +24,14 @@
    MUST come after the @imports; `@source` before an `@import` is an error. */
 @source "../../node_modules/@tracht-digital-solutions/tds-shared";
 
-:root {
-  --font-display: "Lato", "Helvetica Neue", Arial, sans-serif;
-  --font-body: "Geist Variable", "Geist", "Helvetica Neue", Arial, sans-serif;
-}
+/* REMOVED, do not reintroduce: a local `:root` block re-declaring
+   `--font-display` and `--font-body`. base.css already declares both — Lato
+   for display, Plus Jakarta Sans for body — and re-declaring them here is
+   exactly the duplication the shared library exists to remove. It also had a
+   real consequence rather than being merely redundant: the `--font-body` copy
+   named Geist, so this site rendered its body text in a face no other TDS
+   surface uses, and `tests/static-posture.test.ts` pinned the Geist import in
+   place. If a font needs changing, change it in tds-shared's base.css. */
 
 /* ============================================================================
    Central-login chrome (site-local)
