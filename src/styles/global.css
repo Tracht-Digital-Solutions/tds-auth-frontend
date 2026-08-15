@@ -380,7 +380,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 2.5rem;
+  /* Was 2.5rem; the brand accent below now carries part of that gap. */
+  margin-bottom: 1rem;
+}
+/* Spacing only — the bar itself (proportions, colours, geometry) is
+   `.tds-brandbar` from tds-shared. */
+.auth-brand__bar {
+  margin-bottom: 2rem;
 }
 .auth-brand__toolbar {
   display: flex;

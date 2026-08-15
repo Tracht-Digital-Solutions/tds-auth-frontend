@@ -92,6 +92,16 @@ in one place.
     panel beside a light form flattens the whole split.
   - The panel paints its own gradient in CSS, so the frame before the island has
     generated anything is a brand surface rather than a hole.
+  - **The form half carries `.tds-wash`** (tds-shared ≥0.23.0, "Digitale
+    Maßarbeit"): soft brand fields at its outer edges, turned down on a phone and
+    in dark mode by `--tds-decor-field-strength`. It was flat `--color-paper`,
+    which read sterile beside the deliberately rich artwork panel. Put the class
+    on `.auth-panel`, not on `.auth-page` — on the page it would run under the
+    artwork half too, which owns its own ground.
+  - **`.tds-brandbar--sm` sits under the wordmark**, spaced by the local
+    `.auth-brand__bar` (margin only — proportions, colours and geometry are the
+    shared primitive's). It is this page's only ornament; the login is one card
+    of content and a second accent would compete with the artwork.
 
 - **The artwork is generated per visit** (`src/lib/artwork.ts` + `components/LoginArtwork.tsx`).
   - **Nothing renders server-side, deliberately.** This is a static site: anything

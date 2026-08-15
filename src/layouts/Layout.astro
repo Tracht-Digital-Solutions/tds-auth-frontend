@@ -64,7 +64,13 @@ const { title, description = site.description } = Astro.props;
       decoration" either way.
     */}
     <main class="auth-page">
-      <div class="auth-panel">
+      {/* `.tds-wash` gives the form half the warm brand ground the rest
+          of the brand now uses — the soft fields sit at its outer edges,
+          well away from the field labels, and turn themselves down on a
+          phone and in dark mode. Without it this half was flat
+          `--color-paper`, which read as sterile next to the deliberately
+          rich artwork panel. */}
+      <div class="auth-panel tds-wash">
         <div class="auth-panel__inner">
           <header class="auth-brand">
             <strong class="brand-wordmark text-lg"
@@ -74,6 +80,9 @@ const { title, description = site.description } = Astro.props;
               <ThemeToggle client:idle />
             </div>
           </header>
+          {/* The three-part brand accent, sized small — the login is a
+              single card of content, so this is its only ornament. */}
+          <span aria-hidden="true" class="tds-brandbar tds-brandbar--sm auth-brand__bar"></span>
           <slot />
         </div>
       </div>
