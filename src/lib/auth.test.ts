@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  primeRuntimeConfig,
+  resetRuntimeConfig,
+} from "@tracht-digital-solutions/tds-shared/api";
 import { AUTH_API_URL, changePassword, fetchMe, login, type Me } from "~/lib/auth";
 
 /**
@@ -32,10 +36,17 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  // The base is resolved per call against the host's `tds-runtime.json`.
+  // Priming it to "absent" means the baked AUTH_API_URL applies and — the part
+  // that matters here — NO probe request is made: without this, `mock.calls[0]`
+  // would be the `/tds-runtime.json` fetch and every index below shifts by one.
+  resetRuntimeConfig();
+  primeRuntimeConfig(null);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetRuntimeConfig();
 });
 
 /** The request `init` of the nth (default: first) fetch call. */
@@ -250,5 +261,52 @@ describe("changePassword", () => {
   it("propagates a network error to the caller", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     await expect(changePassword("a", "b")).rejects.toThrow(TypeError);
+  });
+});
+
+describe("host-side base resolution", () => {
+  /**
+   * What the `/install/` wizard buys this site.
+   *
+   * The site is a static build: Vite inlines `PUBLIC_AUTH_API_URL`, so without
+   * this a deployed `dist/` could only be re-pointed by a CI rebuild. The
+   * wizard writes `tds-runtime.json` beside `index.html` and these three cases
+   * are the whole contract.
+   */
+  it("follows an absolute authBase from tds-runtime.json", async () => {
+    primeRuntimeConfig({
+      version: 1,
+      site: "auth",
+      mode: "direct",
+      authBase: "https://staging-api.example.test/auth",
+    });
+    fetchMock.mockResolvedValue(res(200, { userId: 1, email: "a@b.de" }));
+
+    await fetchMe();
+
+    expect(callUrl()).toBe("https://staging-api.example.test/auth/me");
+  });
+
+  it("REFUSES a relative authBase and keeps the baked value", async () => {
+    // Proxy mode publishes `/api/auth`, and `install/proxy.php` deliberately
+    // drops `Set-Cookie` — a login through it answers 200 and starts no
+    // session at all. `install/profiles/auth.php` sets `proxy => false` so this
+    // site can never be configured that way; this is the second lock, and the
+    // only one a hand-edited tds-runtime.json still meets.
+    primeRuntimeConfig({ version: 1, site: "auth", mode: "proxy", authBase: "/api/auth" });
+    fetchMock.mockResolvedValue(res(200, {}));
+
+    await login("a@b.de", "pw");
+
+    expect(callUrl()).toBe(`${AUTH_API_URL}/login`);
+  });
+
+  it("keeps the baked value when the host published nothing", async () => {
+    primeRuntimeConfig(null);
+    fetchMock.mockResolvedValue(res(204, {}));
+
+    await changePassword("a", "b");
+
+    expect(callUrl()).toBe(`${AUTH_API_URL}/password`);
   });
 });

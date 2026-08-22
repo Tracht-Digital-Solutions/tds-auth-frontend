@@ -4,11 +4,44 @@
  * `Domain=.tracht-digital.de` — so a login performed here is immediately valid
  * on every sibling panel (management. / app. / tools.) with no token hand-off.
  * JS never reads that cookie; identity is learned via GET /me.
+ *
+ * ### Where the base comes from
+ *
+ * This is a static Astro build: Vite inlines `PUBLIC_AUTH_API_URL` at build
+ * time, so a deployed `dist/` could not be re-pointed at another API without a
+ * CI rebuild. The host-side wizard at `/install/` closes that — it writes
+ * `tds-runtime.json` beside `index.html`, and {@link authBase} prefers it.
  */
 
+import { runtimeAbsolute } from "@tracht-digital-solutions/tds-shared/api";
+
+/**
+ * The build-time fallback, inlined by Vite.
+ *
+ * Still exported: it is what a host nobody has run `/install/` on uses, and it
+ * is the value every resolution below falls back to.
+ */
 export const AUTH_API_URL: string =
   (import.meta.env.PUBLIC_AUTH_API_URL as string | undefined) ??
   "https://api.tracht-digital.de/auth";
+
+/**
+ * Where this page's auth calls actually go.
+ *
+ * Resolved per call rather than once at module scope, because
+ * `tds-runtime.json` is FETCHED: a module constant is evaluated before the file
+ * has been read and would pin the baked value forever. `runtimeConfig()`
+ * memoises the request, so every call after the first awaits an
+ * already-settled promise.
+ *
+ * ABSOLUTE only — that is what `runtimeAbsolute` buys. Proxy mode publishes a
+ * relative base (`/api/auth`) and `install/proxy.php` deliberately drops
+ * `Set-Cookie`, so a login through it would answer 200 and start no session at
+ * all: success reported, nobody signed in, nothing in any log.
+ * `install/profiles/auth.php` sets `proxy => false` so this site can never be
+ * put in that mode; this is the second lock on the same door.
+ */
+export const authBase = (): Promise<string> => runtimeAbsolute("authBase", AUTH_API_URL);
 
 /** The authenticated principal, as returned by tds-auth-api GET /me. */
 export interface Me {
@@ -26,7 +59,7 @@ export interface Me {
 /** Read the current principal, or null if there is no valid session. */
 export async function fetchMe(): Promise<Me | null> {
   try {
-    const res = await fetch(`${AUTH_API_URL}/me`, { credentials: "include" });
+    const res = await fetch(`${await authBase()}/me`, { credentials: "include" });
     return res.ok ? ((await res.json()) as Me) : null;
   } catch {
     return null;
@@ -49,7 +82,7 @@ export interface LoginResult {
  * days. Sent only as an explicit `true`.
  */
 export async function login(email: string, password: string, remember = false): Promise<LoginResult> {
-  const res = await fetch(`${AUTH_API_URL}/login`, {
+  const res = await fetch(`${await authBase()}/login`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -79,7 +112,7 @@ export interface PasswordResult {
  * old, and rotates the session on success.
  */
 export async function changePassword(oldPw: string, newPw: string): Promise<PasswordResult> {
-  const res = await fetch(`${AUTH_API_URL}/password`, {
+  const res = await fetch(`${await authBase()}/password`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

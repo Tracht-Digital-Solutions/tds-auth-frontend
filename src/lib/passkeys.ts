@@ -12,7 +12,7 @@
  * an address has a passkey.
  */
 
-import { AUTH_API_URL } from "./auth";
+import { authBase } from "./auth";
 
 /** Feature detection. Old browsers, http:// origins and locked-down setups all land here. */
 export function passkeysSupported(): boolean {
@@ -70,8 +70,16 @@ function decodeOptions(wire: WireOptions): PublicKeyCredentialCreationOptions & 
   return pk as unknown as PublicKeyCredentialCreationOptions & PublicKeyCredentialRequestOptions;
 }
 
-const api = (path: string, init?: RequestInit) =>
-  fetch(`${AUTH_API_URL}${path}`, { credentials: "include", ...init });
+// One resolver for both modules — see `authBase` in ./auth. Re-deriving the
+// base here is how the two would eventually disagree about which host this site
+// talks to.
+//
+// Note the RP ID is decided by the API (`tracht-digital.de`, the registrable
+// domain), not by this base: re-pointing a host at an API with a different RP
+// ID invalidates the passkeys already registered there. That is an operator
+// concern, not something this module can detect.
+const api = async (path: string, init?: RequestInit) =>
+  fetch(`${await authBase()}${path}`, { credentials: "include", ...init });
 
 const postJson = (path: string, body?: unknown) =>
   api(path, {

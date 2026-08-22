@@ -458,6 +458,49 @@ full flow locally, run a frontend with `PUBLIC_LOGIN_URL` pointed at this dev se
 |---|---|---|
 | `PUBLIC_AUTH_API_URL` | `https://api.tracht-digital.de/auth` | Auth API base (login / me / password) |
 
+That is the **build-time fallback**, not the last word: the host-side wizard
+below can override it at runtime without a rebuild. See `src/lib/auth.ts`.
+
+## Setup auf dem Host: `/install`
+
+Every production build ships the shared setup wizard at
+`https://auth.tracht-digital.de/install`. It is maintained in
+`tds-shared-pkg/install/` and copied into `public/install/` by this repo's
+`prebuild` step (`scripts/sync-installer.mjs auth`), so it reaches the host
+with no pipeline change. `public/install/` is generated — never commit it.
+
+**Why this site needs it.** It is a static build: Vite inlines
+`PUBLIC_AUTH_API_URL` at build time, so a deployed `dist/` could not be
+re-pointed at another API without a CI rebuild. `src/lib/auth.ts` resolves the
+base per call through `authBase()`, which prefers what the wizard wrote into
+`tds-runtime.json`.
+
+Three things are specific to this profile (`install/profiles/auth.php`):
+
+- **The same-origin proxy is not offered, and that is not a preference.**
+  `install/proxy.php` deliberately drops `Set-Cookie` — these sites read, they
+  never log in. This site does nothing else. Routed through the proxy,
+  `POST /login` would answer 200 and never let the session cookie reach the
+  browser: success reported, nobody signed in, nothing in any log. The profile
+  sets `proxy => false`, the wizard clamps the mode server-side (a `disabled`
+  radio is a hint to a browser, not a constraint on a POST), and `authBase()`
+  refuses a relative value as a third lock.
+- **`runtime_keys` is `apiBase` + `authBase` only.** No `loginUrl`: this site
+  IS the login page, so the key would point at itself.
+- **The smoke test is `GET /.well-known/jwks.json`, counting `keys`.** Zero
+  keys means `composer keygen` never ran on the API host — every login then
+  fails signature verification everywhere, while the endpoint still answers a
+  perfectly valid 200.
+
+If `/install` does not answer, `/install/index.php` always does: the short form
+needs Apache's `DirectoryIndex` from the shipped `install/.htaccess`, and a
+vhost that evaluates no `.htaccess` (pure nginx) ignores it.
+
+One thing the wizard cannot follow: the `<link rel=preconnect>` in
+`Layout.astro` is resolved before any JS runs, so it keeps naming the baked
+host. On a re-pointed host that warms a connection nobody uses — a wasted
+socket, never wrong behaviour.
+
 ## Deploy
 
 Two-track: `dev.yml` (push to main → orphan `dev` branch, demo config, **not** deployed) and

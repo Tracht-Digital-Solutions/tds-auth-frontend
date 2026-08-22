@@ -1,10 +1,11 @@
 {
   "name": "tds-auth-frontend",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "prebuild": "node scripts/sync-installer.mjs auth",
     "build": "astro build",
     "preview": "astro preview",
     "type-check": "astro check",
@@ -18,7 +19,7 @@
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@fontsource/lato": "^5.2.7",
     "@tailwindcss/postcss": "^4.3.3",
-    "@tracht-digital-solutions/tds-shared": "^0.24.0",
+    "@tracht-digital-solutions/tds-shared": "^0.26.0",
     "astro": "^7.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

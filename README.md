@@ -75,7 +75,24 @@ tests/static-posture.test.ts     # noindex / Tailwind / Fontsource / cssTarget g
 Dockerfile.test                  # the CI gate on Linux/Node 22  (npm run test:docker)
 scripts/docker-test.mjs
 public/robots.txt                # Disallow: /
+scripts/sync-installer.mjs       # prebuild: copies the wizard into public/install/
+                                 #   (generated, gitignored — see /install below)
 ```
+
+## Setup auf dem Host: `/install`
+
+Jeder Produktions-Build enthält einen Setup-Assistenten unter
+`https://auth.tracht-digital.de/install`, der die ausgelieferte Site mit der
+API verbindet — **ohne Rebuild**.
+
+> **Falls `/install` nicht antwortet:** `https://<domain>/install/index.php`
+> funktioniert immer. Die kurze Form braucht Apaches `DirectoryIndex` aus der
+> mitgelieferten `install/.htaccess`; ein Vhost, der `.htaccess` gar nicht
+> auswertet (reines nginx), ignoriert sie.
+
+Der Same-Origin-Proxy wird hier **nicht** angeboten: `proxy.php` reicht
+`Set-Cookie` bewusst nicht durch, und diese Site tut nichts anderes, als
+Sitzungen zu setzen. Details in `AGENTS.md`.
 
 ## Deploy
 
