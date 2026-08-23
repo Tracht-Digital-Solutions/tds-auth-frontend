@@ -20,9 +20,20 @@ import { site } from "~/lib/site";
 interface Props {
   title: string;
   description?: string;
+  /**
+   * `"login"` is the split shell every visitor-facing page uses: form left,
+   * generated artwork right.
+   *
+   * `"plain"` is a single centred column for the operator pages. The setup
+   * wizard is a wide diagnostic with a JSON preview and the login column is
+   * 384px wide — it was unreadable in it. The two share this `<head>`
+   * deliberately: the theme bootstrap, the Fontsource imports and the
+   * stylesheet order are the half that must never fork.
+   */
+  variant?: "login" | "plain";
 }
 
-const { title, description = site.description } = Astro.props;
+const { title, description = site.description, variant = "login" } = Astro.props;
 ---
 
 <!DOCTYPE html>
@@ -69,6 +80,11 @@ const { title, description = site.description } = Astro.props;
       above it, but keyboard and screen-reader order stay "sign in, then
       decoration" either way.
     */}
+    {variant === "plain" ? (
+      <main class="tds-shell auth-plain" data-surface="panel">
+        <slot />
+      </main>
+    ) : (
     <main class="auth-page">
       {/* `.tds-wash` gives the form half the warm brand ground the rest
           of the brand now uses — the soft fields sit at its outer edges,
@@ -99,6 +115,7 @@ const { title, description = site.description } = Astro.props;
         <LoginArtwork client:load />
       </div>
     </main>
+    )}
 
     <CookieNotice client:idle variant="panel" />
   </body>

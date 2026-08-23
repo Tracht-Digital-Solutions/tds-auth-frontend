@@ -82,17 +82,14 @@ scripts/sync-installer.mjs       # prebuild: copies the wizard into public/insta
 ## Setup auf dem Host: `/install`
 
 Jeder Produktions-Build enthält einen Setup-Assistenten unter
-`https://auth.tracht-digital.de/install`, der die ausgelieferte Site mit der
-API verbindet — **ohne Rebuild**.
+`https://auth.tracht-digital.de/install`, der die ausgelieferte Site mit der API
+verbindet — **ohne Rebuild**. Eine gewöhnliche Seite der Site: auf dieser Domain
+ist PHP abgeschaltet, also läuft der Assistent vollständig im Browser.
 
-> **Falls `/install` nicht antwortet:** `https://<domain>/install/index.php`
-> funktioniert immer. Die kurze Form braucht Apaches `DirectoryIndex` aus der
-> mitgelieferten `install/.htaccess`; ein Vhost, der `.htaccess` gar nicht
-> auswertet (reines nginx), ignoriert sie.
+Er installiert nichts: er prüft, erzeugt die `tds-runtime.json` zum
+Herunterladen, und bestätigt danach, dass die abgelegte Datei wirklich
+ausgeliefert wird. Details in `AGENTS.md`.
 
-Der Same-Origin-Proxy wird hier **nicht** angeboten: `proxy.php` reicht
-`Set-Cookie` bewusst nicht durch, und diese Site tut nichts anderes, als
-Sitzungen zu setzen. Details in `AGENTS.md`.
 
 ## Deploy
 

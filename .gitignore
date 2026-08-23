@@ -1,7 +1,5 @@
 # build output
 dist/
-# written by prebuild (scripts/sync-installer.mjs)
-public/install/
 .output/
 
 # astro

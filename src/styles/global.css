@@ -15,6 +15,17 @@
    404s. */
 @import "@tracht-digital-solutions/tds-shared/styles/base.css";
 @import "@tracht-digital-solutions/tds-shared/styles/app.css";
+/* The geometry tokens for the operator shell (`Layout variant="plain"`).
+   This site is a hand-styled login and never declared a surface, so the
+   shared page primitives (.tds-shell, .tds-card, .tds-page__*) had no
+   geometry at all — .tds-card came out with `padding: 0`, which is invisible
+   rather than merely plain.
+
+   Surface layers are scoped to the BARE attribute, not `:root[...]`, exactly
+   so one can nest inside another. Importing this therefore leaves the login
+   page untouched: it writes no `data-surface`, so none of these tokens
+   apply to it. */
+@import "@tracht-digital-solutions/tds-shared/styles/surfaces/panel.css";
 
 /* Tailwind ignores node_modules by default, and the shared React islands are
    built out of utility classes (`ThemeToggle` is `inline-flex w-9 h-9
@@ -584,4 +595,11 @@
 }
 .auth-error {
   margin: 0;
+}
+
+/* The operator shell (`Layout variant="plain"`), used by /install. The login
+   shell is a full-height split grid; this one is an ordinary document column,
+   so it only needs the padding the split shell got from its grid. */
+.auth-plain {
+  padding-block: 2.5rem 4rem;
 }

@@ -464,42 +464,43 @@ below can override it at runtime without a rebuild. See `src/lib/auth.ts`.
 ## Setup auf dem Host: `/install`
 
 Every production build ships the shared setup wizard at
-`https://auth.tracht-digital.de/install`. It is maintained in
-`tds-shared-pkg/install/` and copied into `public/install/` by this repo's
-`prebuild` step (`scripts/sync-installer.mjs auth`), so it reaches the host
-with no pipeline change. `public/install/` is generated — never commit it.
+`https://auth.tracht-digital.de/install` — a React island from
+`tds-shared-pkg/src/install/`, mounted by `src/pages/install.astro`. It is a
+normal page: this domain runs with **PHP disabled**
+(`tds-gateway-api/DEPLOY-PLESK.md`), so anything shipped here has to work as a
+static file.
 
 **Why this site needs it.** It is a static build: Vite inlines
 `PUBLIC_AUTH_API_URL` at build time, so a deployed `dist/` could not be
 re-pointed at another API without a CI rebuild. `src/lib/auth.ts` resolves the
-base per call through `authBase()`, which prefers what the wizard wrote into
+base per call through `authBase()`, which prefers what the operator placed in
 `tds-runtime.json`.
 
-Three things are specific to this profile (`install/profiles/auth.php`):
+It installs nothing — a browser cannot write to the docroot. It verifies,
+generates the file for download, and then confirms the placed file is really
+being served.
 
-- **The same-origin proxy is not offered, and that is not a preference.**
-  `install/proxy.php` deliberately drops `Set-Cookie` — these sites read, they
-  never log in. This site does nothing else. Routed through the proxy,
-  `POST /login` would answer 200 and never let the session cookie reach the
-  browser: success reported, nobody signed in, nothing in any log. The profile
-  sets `proxy => false`, the wizard clamps the mode server-side (a `disabled`
-  radio is a hint to a browser, not a constraint on a POST), and `authBase()`
-  refuses a relative value as a third lock.
-- **`runtime_keys` is `apiBase` + `authBase` only.** No `loginUrl`: this site
-  IS the login page, so the key would point at itself.
-- **The smoke test is `GET /.well-known/jwks.json`, counting `keys`.** Zero
-  keys means `composer keygen` never ran on the API host — every login then
-  fails signature verification everywhere, while the endpoint still answers a
-  perfectly valid 200.
+Two things specific to this repo:
 
-If `/install` does not answer, `/install/index.php` always does: the short form
-needs Apache's `DirectoryIndex` from the shipped `install/.htaccess`, and a
-vhost that evaluates no `.htaccess` (pure nginx) ignores it.
+- **`Layout variant="plain"`.** The normal shell is the split login (form left,
+  artwork right) and that form column is 384px, which is unusable for a wide
+  diagnostic. The plain shell is a single centred column and also writes
+  `data-surface="panel"`: this site never declared a surface at all, so the
+  shared page primitives had no geometry tokens and `.tds-card` rendered with
+  `padding: 0` — invisible rather than merely plain. Surface layers are scoped
+  to the BARE attribute so one can nest inside another, which is why importing
+  `surfaces/panel.css` leaves the login page byte-identical.
+- **`runtimeKeys` is `apiBase` + `authBase` only**, and the smoke test is
+  `GET /.well-known/jwks.json` counting `keys`. No `loginUrl`: this site IS the
+  login page. Zero keys means `composer keygen` never ran on the API host —
+  every login then fails signature verification everywhere, while the endpoint
+  still answers a perfectly valid 200.
 
 One thing the wizard cannot follow: the `<link rel=preconnect>` in
 `Layout.astro` is resolved before any JS runs, so it keeps naming the baked
 host. On a re-pointed host that warms a connection nobody uses — a wasted
 socket, never wrong behaviour.
+
 
 ## Deploy
 

@@ -1,0 +1,24 @@
+---
+/**
+ * `/install` — the host-side setup wizard.
+ *
+ * Connects this deployed site to the API without a rebuild. It is a normal page
+ * of the site: every frontend subdomain runs with PHP disabled
+ * (`tds-gateway-api/DEPLOY-PLESK.md`), so anything shipped here has to work as
+ * a static file.
+ *
+ * No `noindex` prop needed — this Layout hard-codes `robots: noindex,nofollow`
+ * on every page, and `public/robots.txt` is `Disallow: /`. There is no sitemap
+ * in this repo either, so nothing else has to be excluded.
+ */
+import { InstallWizard, auth } from "@tracht-digital-solutions/tds-shared/install";
+import Layout from "~/layouts/Layout.astro";
+---
+
+<Layout
+  title="Einrichtung — Zentrale Anmeldung"
+  description="Verbindet diese Site mit der API."
+  variant="plain"
+>
+  <InstallWizard client:load profile={auth} />
+</Layout>
