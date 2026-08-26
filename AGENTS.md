@@ -308,6 +308,11 @@ in one place.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
+- **The current tds-shared line is `^0.33.0`.** A caret on a `0.x` package is
+  minor-locked, so every shared minor needs an explicit repin here. Validate
+  it from a fresh `npm install --no-package-lock`; an incrementally-grown
+  `node_modules` tree can keep an older line alive while every local gate stays
+  green.
 - **`@source` for the shared package, or its islands render unstyled.** The shared React
   components are built from Tailwind utilities (`ThemeToggle` is
   `inline-flex w-9 h-9 rounded-full …`), and **Tailwind ignores `node_modules` by
