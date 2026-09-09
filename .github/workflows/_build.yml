@@ -40,6 +40,22 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@tracht-digital-solutions'
 
+      - name: Pin npm
+        # Node 22 ships npm 10, whose arborist crashes with
+        # "Cannot read properties of null (reading 'edgesOut')" on some
+        # dependency graphs. Astro 7.3.0 (2026-09-03) introduced one: the first
+        # build after that publish failed at Install, before a single test ran,
+        # on a commit that touched no manifest. npm 11 resolves the same tree
+        # without complaint.
+        #
+        # This bites here and not elsewhere because `--no-package-lock` below
+        # re-resolves every caret range on every run — so a publish by any
+        # dependency can change the graph between two builds of the same
+        # commit. That is the trade for a lockfile this repo cannot use; the
+        # cost is that the npm doing the resolving has to be current.
+        # tds-landingpage-frontend hit this first and carries the same step.
+        run: npm install -g npm@11
+
       - name: Install
         # The Windows-generated lockfile is win32-only, so --no-package-lock is
         # required for the Linux runner to resolve the right native binaries
