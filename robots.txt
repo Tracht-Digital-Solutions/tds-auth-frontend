@@ -1,0 +1,3 @@
+# Central login — private surface, never crawl or index.
+User-agent: *
+Disallow: /

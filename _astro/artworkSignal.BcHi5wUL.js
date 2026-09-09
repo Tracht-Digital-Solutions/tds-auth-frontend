@@ -1,0 +1,1 @@
+var e=`tds:auth-typing`;function t(){typeof window>`u`||window.dispatchEvent(new CustomEvent(e))}function n(t){if(typeof window>`u`)return()=>{};let n=()=>t();return window.addEventListener(e,n),()=>window.removeEventListener(e,n)}export{t as n,n as t};
