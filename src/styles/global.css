@@ -603,3 +603,51 @@
 .auth-plain {
   padding-block: 2.5rem 4rem;
 }
+
+/* The legal row.
+   Fixed to the bottom-left and quiet: this surface is a login, and the row has
+   to be reachable without competing with the one thing the page is for. It
+   clears the cookie notice by sitting above `--tds-bottom-lane`, the height the
+   notice measures and publishes — the same mechanism the toast stack uses, so
+   the two cannot overlap on a phone where the notice is four lines tall.
+
+   Not `position: absolute` inside the panel: the panel scrolls on a short
+   viewport and the row would scroll out of "unmittelbar erreichbar" with it. */
+.auth-legal {
+  position: fixed;
+  left: 1rem;
+  bottom: calc(1rem + var(--tds-bottom-lane, 0px) + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+}
+
+.auth-legal a,
+.auth-legal .consent-link {
+  color: var(--color-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  /* 2.5.8: a run of small links at the edge of a screen is exactly where a
+     24px floor stops being pedantic. The gap above keeps them apart. */
+  min-height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.auth-legal a:hover,
+.auth-legal .consent-link:hover {
+  color: var(--color-accent);
+}
+
+@media (max-width: 48rem) {
+  /* On a phone the artwork column is gone and the panel fills the screen, so
+     the row centres under it rather than hugging an edge nothing else uses. */
+  .auth-legal {
+    left: 0;
+    right: 0;
+    justify-content: center;
+  }
+}

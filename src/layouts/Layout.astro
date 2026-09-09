@@ -13,9 +13,10 @@ import "@fontsource/lato/900.css";
 // package is pure payload.
 import "@fontsource-variable/plus-jakarta-sans";
 import "~/styles/global.css";
-import { ThemeToggle, CookieNotice } from "@tracht-digital-solutions/tds-shared/components";
+import { ThemeToggle } from "@tracht-digital-solutions/tds-shared/components";
+import { ConsentBanner, ConsentLink } from "@tracht-digital-solutions/tds-shared/consent";
 import LoginArtwork from "~/components/LoginArtwork.tsx";
-import { site } from "~/lib/site";
+import { legalLinks, site } from "~/lib/site";
 
 interface Props {
   title: string;
@@ -117,6 +118,35 @@ const { title, description = site.description, variant = "login" } = Astro.props
     </main>
     )}
 
-    <CookieNotice client:idle variant="panel" />
+    {/*
+      The legal row. This surface carried none — see `legalLinks` for why that
+      mattered — and the consent entry point belongs beside them rather than
+      buried, because withdrawing has to be as easy as giving (Art. 7 Abs. 3
+      DSGVO).
+    */}
+    <nav class="auth-legal" aria-label="Rechtliches">
+      <a href={legalLinks.impressum}>Impressum</a>
+      <a href={legalLinks.datenschutz}>Datenschutz</a>
+      <ConsentLink client:idle lang="de" />
+    </nav>
+
+    {/*
+      `variant="panel"` is the wording, not a different mechanism: this surface
+      DOES set a cookie — the session one, on login — and saying "no cookies"
+      here would be false. No `categories`, because there is nothing optional
+      to decide about; the banner states the fact and offers one
+      acknowledgement.
+
+      `lang` and `privacyUrl` are passed explicitly. They were not, so the
+      notice took its defaults, and the privacy link went to a hard-coded
+      absolute URL that nothing here could see or check.
+    */}
+    <ConsentBanner
+      client:idle
+      lang="de"
+      variant="panel"
+      privacyUrl={legalLinks.datenschutz}
+      imprintUrl={legalLinks.impressum}
+    />
   </body>
 </html>
