@@ -308,7 +308,7 @@ in one place.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
-- **The current tds-shared line is `^0.33.0`.** A caret on a `0.x` package is
+- **The current tds-shared line is `^0.37.1`.** A caret on a `0.x` package is
   minor-locked, so every shared minor needs an explicit repin here. Validate
   it from a fresh `npm install --no-package-lock`; an incrementally-grown
   `node_modules` tree can keep an older line alive while every local gate stays
