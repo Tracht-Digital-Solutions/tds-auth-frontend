@@ -2,6 +2,7 @@
 // Font faces must be imported here (not via @import in global.css):
 // @tailwindcss/postcss inlines CSS @imports without rebasing their relative
 // url(./files/*.woff2) refs, so Vite never emits the fonts otherwise.
+import { pageTransitionOptIn } from "@tracht-digital-solutions/tds-shared/astro";
 import "@fontsource/lato/400.css";
 import "@fontsource/lato/700.css";
 import "@fontsource/lato/900.css";
@@ -42,6 +43,10 @@ const { title, description = site.description, variant = "login" } = Astro.props
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The cross-page transition switch, as early as it can be: Chrome decides the
+         incoming page's opt-in at its first render, and the stylesheet linked at the
+         end of this head often arrives later (tds-shared pageTransitionOptIn). -->
+    <style is:inline set:html={pageTransitionOptIn} />
     <meta name="description" content={description} />
     <meta name="theme-color" content="#050f68" />
     {/* Private surface — never index the login. */}
