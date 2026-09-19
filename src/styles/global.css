@@ -15,6 +15,9 @@
    404s. */
 @import "@tracht-digital-solutions/tds-shared/styles/base.css";
 @import "@tracht-digital-solutions/tds-shared/styles/app.css";
+/* Cross-page fade between the sign-in, password and passkey pages — no
+   script, opacity only, off under reduced motion. */
+@import "@tracht-digital-solutions/tds-shared/styles/page-transitions.css";
 /* The geometry tokens for the operator shell (`Layout variant="plain"`).
    This site is a hand-styled login and never declared a surface, so the
    shared page primitives (.tds-shell, .tds-card, .tds-page__*) had no

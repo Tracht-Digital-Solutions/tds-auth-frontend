@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { flushSync } from "react-dom";
+import { transitionUpdate } from "@tracht-digital-solutions/tds-shared/motion";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { fetchMe, login } from "~/lib/auth";
 import { signalTyping } from "~/lib/artworkSignal";
@@ -51,6 +53,12 @@ function EyeOffIcon() {
  * account is flagged, else re-confirms via `/me` and redirects to the validated
  * `?next=` (or a role-based default).
  */
+/**
+ * The one name the spinner box and the form share (only one exists at a
+ * time), so the browser morphs the first into the second.
+ */
+const SHAPE = { "--tds-vt-name": "auth-login" } as CSSProperties;
+
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -67,6 +75,14 @@ export default function LoginForm() {
   const [canUsePasskeys, setCanUsePasskeys] = useState(false);
   // Start in "checking" so we don't flash the form before the SSO probe.
   const [checking, setChecking] = useState(true);
+
+  // A change of the form's SHAPE — the session check's spinner handing over
+  // to the form, an error pushing the fields down — runs as a native View
+  // Transition on the box named below: it grows and cross-fades instead of
+  // jumping. tds-shared's transitionUpdate rather than motion: this island is
+  // client:load on the page whose LCP it is. Plain update where unsupported
+  // or under reduced motion.
+  const reshape = (update: () => void) => transitionUpdate(() => flushSync(update));
 
   const rawNext = (): string | null =>
     typeof location !== "undefined" ? new URLSearchParams(location.search).get("next") : null;
@@ -119,7 +135,7 @@ export default function LoginForm() {
         location.replace(resolveTarget(rawNext(), me, location.origin));
         return;
       }
-      setChecking(false);
+      reshape(() => setChecking(false));
     })();
     return () => {
       cancelled = true;
@@ -148,20 +164,26 @@ export default function LoginForm() {
     if (res.ok) {
       const message = await proceed(res.mustChangePassword === true);
       if (message === null) return; // navigating away
-      setError(message);
-      setPasskeyBusy(false);
+      reshape(() => {
+        setError(message);
+        setPasskeyBusy(false);
+      });
       return;
     }
     // Dismissing the OS prompt is a decision, not a failure — saying
     // "fehlgeschlagen" there trains people to distrust the message.
     if (res.reason !== "abort") {
-      setError(
+      const message =
         res.status === 429
           ? "Zu viele Versuche. Bitte später erneut versuchen."
           : res.status === 403
             ? "Dieses Konto ist deaktiviert."
-            : "Anmeldung mit Passkey fehlgeschlagen. Bitte mit E-Mail und Passwort anmelden.",
-      );
+            : "Anmeldung mit Passkey fehlgeschlagen. Bitte mit E-Mail und Passwort anmelden.";
+      reshape(() => {
+        setError(message);
+        setPasskeyBusy(false);
+      });
+      return;
     }
     setPasskeyBusy(false);
   };
@@ -173,39 +195,45 @@ export default function LoginForm() {
     try {
       const res = await login(email, password, remember);
       if (!res.ok) {
-        setError(
+        const message =
           res.status === 401
             ? "E-Mail oder Passwort ist falsch."
             : res.status === 403
               ? "Dieses Konto ist deaktiviert."
               : res.status === 429
                 ? "Zu viele Versuche. Bitte später erneut versuchen."
-                : "Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
-        );
-        setBusy(false);
+                : "Anmeldung fehlgeschlagen. Bitte erneut versuchen.";
+        reshape(() => {
+          setError(message);
+          setBusy(false);
+        });
         return;
       }
       const message = await proceed(res.mustChangePassword);
       if (message !== null) {
-        setError(message);
-        setBusy(false);
+        reshape(() => {
+          setError(message);
+          setBusy(false);
+        });
       }
     } catch {
-      setError("Netzwerkfehler. Bitte erneut versuchen.");
-      setBusy(false);
+      reshape(() => {
+        setError("Netzwerkfehler. Bitte erneut versuchen.");
+        setBusy(false);
+      });
     }
   };
 
   if (checking) {
     return (
-      <div className="grid place-items-center py-8" aria-busy="true">
+      <div className="grid place-items-center py-8 tds-vt-item" style={SHAPE} aria-busy="true">
         <Spinner size="md" />
       </div>
     );
   }
 
   return (
-    <form className="auth-form" onSubmit={submit}>
+    <form className="auth-form tds-vt-item" style={SHAPE} onSubmit={submit}>
       {error ? <p className="status-pill status-pill--danger auth-error">{error}</p> : null}
       {/* Every text field announces its keystrokes so the artwork island can
           answer them — see `artworkSignal.ts` for why this is an explicit call

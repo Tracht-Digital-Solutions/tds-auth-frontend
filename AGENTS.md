@@ -308,6 +308,16 @@ in one place.
 
 ## Gotchas (repo-wide conventions apply — see root CLAUDE.md)
 
+- **Motion on the sign-in page is native, never a library (tds-shared ≥ 0.38.6).**
+  `LoginForm` is `client:load` on the page whose LCP it is, so its shape
+  changes — the session check's spinner handing over to the form, an error
+  pushing the fields down — run through tds-shared's `transitionUpdate`
+  (`reshape()`): spinner box and form share one view-transition name
+  (`auth-login`), so the browser grows one into the other. Pages cross-fade via
+  `page-transitions.css`. Measured: LCP is set by the cookie notice; a jump
+  from 492 to ~520 ms in Sept 2026 came from React 19.3 floating in, not from
+  this (tds-shared 0.37.9 vs 0.38.6 with the same React: 516 vs 520 ms).
+
 - **The current tds-shared line is `^0.37.1`.** A caret on a `0.x` package is
   minor-locked, so every shared minor needs an explicit repin here. Validate
   it from a fresh `npm install --no-package-lock`; an incrementally-grown
