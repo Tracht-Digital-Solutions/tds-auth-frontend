@@ -300,12 +300,47 @@ describe("login chrome", () => {
     expect(globalCss).toMatch(/mix-blend-mode:\s*screen/);
   });
 
-  it("keeps the theme bootstrap as a raw inline script", () => {
+  it("takes the theme bootstrap from tds-shared, not from a copy", () => {
+    /**
+     * It WAS a hand-written copy here, and this test asserted its body
+     * (`localStorage.getItem("tds-theme")`). That is what let it drift: the
+     * shared script also re-applies the theme on `astro:before-swap`, and the
+     * copy never did — invisible until a page swap happens, at which point the
+     * incoming document arrives with no attribute and the theme flips to the OS
+     * default for a frame. Replaced 2026-09-29, when this site enabled prefetch.
+     *
+     * So the assertion moved up a level: use the shared value, and let the
+     * package own the body. The body is checked against the package below, so a
+     * regression in tds-shared fails here too.
+     */
+    expect(layout).toMatch(/import \{[^}]*\bthemeBootstrapScript\b[^}]*\} from "@tracht-digital-solutions\/tds-shared\/astro"/);
+    expect(layout).toMatch(/<script is:inline set:html=\{themeBootstrapScript\} \/>/);
+    expect(layout, "no second, hand-written copy").not.toContain('localStorage.getItem("tds-theme")');
+
     // Wrapping an Astro inline script body in {`...`} leaks literal backticks
-    // into dist and kills the no-flash theme bootstrap.
+    // into dist. Still true for the one raw inline script left here.
     expect(layout).toMatch(/<script is:inline>/);
     expect(layout).not.toMatch(/<script is:inline>\s*\{`/);
-    expect(layout).toContain('localStorage.getItem("tds-theme")');
+  });
+
+  it("gets a bootstrap that survives a page swap", async () => {
+    /**
+     * The RESOLVED value, imported rather than read off disk: the built module
+     * interpolates the storage key (`localStorage.getItem("${THEME_STORAGE_KEY}")`),
+     * so the source text does not contain it and the string that actually ships
+     * is only visible after evaluation. This is the exact text the layout inlines.
+     */
+    const { themeBootstrapScript } = await import(
+      "@tracht-digital-solutions/tds-shared/astro"
+    );
+    expect(themeBootstrapScript).toContain('localStorage.getItem("tds-theme")');
+    expect(themeBootstrapScript, "reads the OS preference when nothing is stored").toContain(
+      "prefers-color-scheme: dark",
+    );
+    expect(
+      themeBootstrapScript,
+      "re-applies on a client-side navigation — the half the local copy lacked",
+    ).toContain("astro:before-swap");
   });
 });
 

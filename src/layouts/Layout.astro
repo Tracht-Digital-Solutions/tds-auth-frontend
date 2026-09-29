@@ -2,7 +2,7 @@
 // Font faces must be imported here (not via @import in global.css):
 // @tailwindcss/postcss inlines CSS @imports without rebasing their relative
 // url(./files/*.woff2) refs, so Vite never emits the fonts otherwise.
-import { pageTransitionOptIn } from "@tracht-digital-solutions/tds-shared/astro";
+import { pageTransitionOptIn, themeBootstrapScript } from "@tracht-digital-solutions/tds-shared/astro";
 import "@fontsource/lato/400.css";
 import "@fontsource/lato/700.css";
 import "@fontsource/lato/900.css";
@@ -57,22 +57,24 @@ const { title, description = site.description, variant = "login" } = Astro.props
         (or spoofed) service. Keep it byte-identical to the landingpage's. */}
     <link rel="icon" type="image/png" href="/favicon.png" sizes="any" />
 
+    {/* Not part of the shared bootstrap, so it stays its own line. */}
+    <script is:inline>document.documentElement.classList.add("js");</script>
+
     {/* No-flash theme bootstrap — same key as every other TDS frontend so the
-        light/dark choice carries across properties. Raw body; do not wrap. */}
-    <script is:inline>
-      document.documentElement.classList.add("js");
-      (function () {
-        try {
-          var saved = localStorage.getItem("tds-theme");
-          if (saved === "light" || saved === "dark") {
-            document.documentElement.setAttribute("data-theme", saved);
-            return;
-          }
-        } catch (e) {}
-        var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-      })();
-    </script>
+        light/dark choice carries across properties.
+
+        THE SHARED SCRIPT (2026-09-29), not a copy. This site had the only
+        hand-written version, and it was missing the half that matters as soon as
+        a page swap happens: `themeBootstrapScript` also re-applies the theme on
+        `astro:before-swap`, because the incoming document arrives without the
+        attribute and the theme flips to the OS default for a frame. This repo
+        now enables hover prefetch, and the next step in that direction is a
+        client-side router — at which point a divergent copy here would have
+        been the one surface that flashes.
+
+        `set:html`, and the value is a raw function body: an Astro inline script
+        must never be wrapped in a template literal (it ships the backticks). */}
+    <script is:inline set:html={themeBootstrapScript} />
 
     <link rel="preconnect" href="https://api.tracht-digital.de" crossorigin />
     <meta name="generator" content={Astro.generator} />
