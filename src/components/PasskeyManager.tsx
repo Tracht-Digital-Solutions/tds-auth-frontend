@@ -19,7 +19,10 @@ import {
  * row it just created, and a failure names what to do next.
  */
 export default function PasskeyManager() {
-  const [supported] = useState(() => passkeysSupported());
+  // Decided after mount, like LoginForm does. Reading it in the initializer ran
+  // during the prerender too, where `window` does not exist — the static HTML
+  // said "this browser cannot", and hydration then disagreed with it.
+  const [supported, setSupported] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const [name, setName] = useState("");
@@ -28,28 +31,40 @@ export default function PasskeyManager() {
   const [pendingDelete, setPendingDelete] = useState<Passkey | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = async () => {
+  const load = async (isCurrent: () => boolean = () => true) => {
     const list = await listPasskeys();
-    if (list === null) {
+    if (!isCurrent()) return;
+    if (list === "signed-out") {
       // No session (or it just expired). Bounce to the login and come back —
       // the same absolute `?next=` contract the panels use.
       location.replace(`/?next=${encodeURIComponent(location.href)}`);
       return;
     }
-    setPasskeys(list);
+    if (list === "failed") {
+      setStatus({ tone: "danger", text: "Passkeys konnten nicht geladen werden. Bitte später erneut versuchen." });
+    } else {
+      setPasskeys(list);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
+    let cancelled = false;
+    setSupported(passkeysSupported());
     void (async () => {
       // Confirm a session exists before rendering anything account-specific.
       const me = await fetchMe();
+      if (cancelled) return;
       if (!me) {
         location.replace(`/?next=${encodeURIComponent(location.href)}`);
         return;
       }
-      await load();
+      await load(() => !cancelled);
     })();
+    return () => {
+      cancelled = true;
+    };
+    // `load` is recreated each render and reads only setters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,12 +98,15 @@ export default function PasskeyManager() {
       setPendingDelete(null);
       await load();
     } else {
-      setStatus({ tone: "danger", text: `Entfernen fehlgeschlagen (HTTP ${res.status}).` });
+      setStatus({
+        tone: "danger",
+        text: res.status === 0 ? "Keine Verbindung. Bitte erneut versuchen." : `Entfernen fehlgeschlagen (HTTP ${res.status}).`,
+      });
     }
     setDeleting(false);
   };
 
-  if (!supported) {
+  if (supported === false) {
     return (
       <p className="status-pill status-pill--warning auth-error">
         Dieser Browser unterstützt keine Passkeys. Bitte melden Sie sich mit E-Mail und Passwort an.
@@ -96,7 +114,7 @@ export default function PasskeyManager() {
     );
   }
 
-  if (loading) {
+  if (supported === null || loading) {
     return (
       <div className="grid place-items-center py-8" aria-busy="true">
         <Spinner size="md" />

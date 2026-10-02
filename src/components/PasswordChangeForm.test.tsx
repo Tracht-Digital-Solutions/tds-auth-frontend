@@ -248,14 +248,16 @@ describe("saving", () => {
   });
 
   it("still redirects when the post-change /me comes back empty", async () => {
-    // The session was just rotated; a failed probe must not strand the user.
+    // The session was just rotated; a failed probe must not strand the user —
+    // nor decide where they go. The account seen on mount (an admin here)
+    // still does: `null` used to mean "customer" and sent admins to the portal.
     await renderForm();
     changePassword.mockResolvedValue({ ok: true, status: 204 });
     fetchMe.mockResolvedValue(null);
 
     await fillAndSubmit();
 
-    await waitFor(() => expect(loc.target()).toBe(PORTAL_HOME));
+    await waitFor(() => expect(loc.target()).toBe(ADMIN_HOME));
   });
 
   it("disables the button and shows a spinner while saving", async () => {

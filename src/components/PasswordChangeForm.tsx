@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
-import { changePassword, fetchMe } from "~/lib/auth";
+import { changePassword, fetchMe, type Me } from "~/lib/auth";
 import { signalTyping } from "~/lib/artworkSignal";
 import { resolveTarget } from "~/lib/redirect";
 
@@ -21,6 +21,10 @@ export default function PasswordChangeForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
+  // The account seen by the guard below. After the change the session is read
+  // again for a fresh answer, but a transient failure there must not decide
+  // the destination: `null` means "customer", which sent admins to the portal.
+  const knownMe = useRef<Me | null>(null);
 
   const rawNext = (): string | null =>
     typeof location !== "undefined" ? new URLSearchParams(location.search).get("next") : null;
@@ -36,6 +40,7 @@ export default function PasswordChangeForm() {
         location.replace(`/${next ? `?next=${encodeURIComponent(next)}` : ""}`);
         return;
       }
+      knownMe.current = me;
       setChecking(false);
     })();
     return () => {
@@ -72,7 +77,7 @@ export default function PasswordChangeForm() {
         setBusy(false);
         return;
       }
-      const me = await fetchMe();
+      const me = (await fetchMe()) ?? knownMe.current;
       location.replace(resolveTarget(rawNext(), me, location.origin));
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");

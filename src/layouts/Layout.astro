@@ -12,7 +12,9 @@ import "@fontsource/lato/900.css";
 // the portal, the blog and the landingpage. JetBrains Mono is deliberately NOT
 // imported — `--font-mono` has no call site in this repo, and an unused font
 // package is pure payload.
-import "@fontsource-variable/plus-jakarta-sans";
+// The CSS entry, not the bare specifier: the package publishes no `types`
+// condition, and TS 6 fails a bare side-effect import of it (ts2882).
+import "@fontsource-variable/plus-jakarta-sans/index.css";
 import "~/styles/global.css";
 import { ThemeToggle } from "@tracht-digital-solutions/tds-shared/components";
 import { ConsentBanner, ConsentLink } from "@tracht-digital-solutions/tds-shared/consent";

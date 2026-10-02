@@ -124,7 +124,7 @@ describe("build configuration", () => {
 describe("font loading", () => {
   it("imports Fontsource from the layout frontmatter (so Vite emits the woff2)", () => {
     expect(layout).toMatch(/import "@fontsource\/lato\/400\.css";/);
-    expect(layout).toMatch(/import "@fontsource-variable\/plus-jakarta-sans";/);
+    expect(layout).toMatch(/import "@fontsource-variable\/plus-jakarta-sans\/index\.css";/);
   });
 
   it("is on the canonical type stack, not this site's old Geist", () => {

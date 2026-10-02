@@ -96,8 +96,22 @@ export interface PasskeyLoginResult {
   mustChangePassword?: boolean;
 }
 
-/** Sign in with a passkey. */
+/**
+ * Sign in with a passkey.
+ *
+ * Never rejects. A network failure used to escape as a rejected promise; the
+ * form called this through `void`, so its busy flag stayed set and both sign-in
+ * buttons stayed disabled with nothing on screen.
+ */
 export async function loginWithPasskey(remember = false): Promise<PasskeyLoginResult> {
+  try {
+    return await loginWithPasskeyOrThrow(remember);
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+}
+
+async function loginWithPasskeyOrThrow(remember: boolean): Promise<PasskeyLoginResult> {
   if (!passkeysSupported()) return { ok: false, reason: "unsupported" };
 
   const optionsRes = await postJson("/passkeys/login/options");
@@ -137,11 +151,21 @@ export interface Passkey {
   last_used_at: string | null;
 }
 
-export async function listPasskeys(): Promise<Passkey[] | null> {
-  const res = await api("/passkeys");
-  if (!res.ok) return null;
-  const data = (await res.json()) as { passkeys?: Passkey[] };
-  return data.passkeys ?? [];
+/**
+ * The signed-in user's passkeys, `"signed-out"` without a session, or
+ * `"failed"` when the API could not be asked. The last two used to be one
+ * `null`, so a network hiccup sent a signed-in user to the login page.
+ */
+export async function listPasskeys(): Promise<Passkey[] | "signed-out" | "failed"> {
+  try {
+    const res = await api("/passkeys");
+    if (res.status === 401 || res.status === 403) return "signed-out";
+    if (!res.ok) return "failed";
+    const data = (await res.json()) as { passkeys?: Passkey[] };
+    return data.passkeys ?? [];
+  } catch {
+    return "failed";
+  }
 }
 
 export interface RegisterResult {
@@ -151,8 +175,16 @@ export interface RegisterResult {
   error?: string;
 }
 
-/** Register a new passkey for the signed-in user. */
+/** Register a new passkey for the signed-in user. Never rejects. */
 export async function registerPasskey(name: string): Promise<RegisterResult> {
+  try {
+    return await registerPasskeyOrThrow(name);
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+}
+
+async function registerPasskeyOrThrow(name: string): Promise<RegisterResult> {
   if (!passkeysSupported()) return { ok: false, reason: "unsupported" };
 
   const optionsRes = await postJson("/passkeys/options");
@@ -187,7 +219,12 @@ export async function registerPasskey(name: string): Promise<RegisterResult> {
   return { ok: false, reason: "failed", status: res.status, error: data.error };
 }
 
+/** Remove a passkey. Never rejects; `status: 0` means the API was not reached. */
 export async function deletePasskey(id: number): Promise<{ ok: boolean; status: number }> {
-  const res = await api(`/passkeys/${id}`, { method: "DELETE" });
-  return { ok: res.ok, status: res.status };
+  try {
+    const res = await api(`/passkeys/${id}`, { method: "DELETE" });
+    return { ok: res.ok, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
 }

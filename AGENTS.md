@@ -318,7 +318,7 @@ in one place.
   from 492 to ~520 ms in Sept 2026 came from React 19.3 floating in, not from
   this (tds-shared 0.37.9 vs 0.38.6 with the same React: 516 vs 520 ms).
 
-- **The current tds-shared line is `^0.37.1`.** A caret on a `0.x` package is
+- **The current tds-shared line is `^0.45.4`.** A caret on a `0.x` package is
   minor-locked, so every shared minor needs an explicit repin here. Validate
   it from a fresh `npm install --no-package-lock`; an incrementally-grown
   `node_modules` tree can keep an older line alive while every local gate stays
@@ -445,8 +445,8 @@ Two testing gotchas worth knowing before you extend them:
 
 **`npm run test:docker`** (`Dockerfile.test` + `scripts/docker-test.mjs`) reruns
 type-check + tests + build inside `node:22-bookworm-slim`, the runner's image. It exists
-because the repo installs with `--no-package-lock` (the committed lockfile is
-Windows-generated and win32-only), so a dev box and CI can resolve *different* native
+because the repo installs with `--no-package-lock` (the lockfile is gitignored:
+a Windows-generated one is win32-only), so a dev box and CI can resolve *different* native
 binaries for rolldown/lightningcss/sharp — a green local run does not prove the Linux
 build is green. The Packages PAT is read from `$NPM_TOKEN` or `~/.npmrc` and passed as a
 **BuildKit secret**; never move it to an `ARG`/`ENV`, which would persist in the image
@@ -459,7 +459,7 @@ it shadows the Linux install and the whole point is lost.
 npm install --no-package-lock   # needs a GitHub PAT with read:packages (NPM_TOKEN / ~/.npmrc)
 npm run dev                     # astro dev
 npm run type-check              # astro check — 0 errors is the gate
-npm run test:run                # vitest — lib + both islands + posture guards
+npm run test:run                # vitest 4 (TS 6, jsdom 30 — the sibling sites' line) — lib + islands + posture guards
 npm run test:docker             # the same gate on Linux/Node 22 (needs Docker + the PAT)
 npm run build                   # → dist/ (the deployed artifact)
 ```
