@@ -654,3 +654,37 @@
     justify-content: center;
   }
 }
+
+/* ---- Hard 2D shadows (2026-10-06) ----
+   The same depth language as the public sites and the panels (tds-shared
+   0.48 gives the panel surface the `--tds-shadow-hard*` offsets). The login
+   page writes no `data-surface` and imports no primitives.css, so it does not
+   match the shared scoped rules; these are the same values, applied to the
+   controls this page has. `--tds-shadow-ink` comes from base.css and flips
+   with the theme. Hover lifts toward the pointer, press sinks into the
+   shadow — exactly as on the journal and the landingpage. */
+.auth-form :is(.btn-primary, .btn-ghost),
+.btn.btn-primary,
+.btn.btn-ghost {
+  box-shadow: 3px 3px 0 0 var(--tds-shadow-ink);
+  transition-property: background-color, color, border-color, translate;
+}
+:is(.btn.btn-primary, .btn.btn-ghost):is(:hover, :focus-visible):not(:disabled) {
+  translate: -2px -2px;
+  box-shadow: 5px 5px 0 0 var(--tds-shadow-ink);
+}
+:is(.btn.btn-primary, .btn.btn-ghost):active:not(:disabled) {
+  translate: 2px 2px;
+  box-shadow: 1px 1px 0 0 var(--tds-shadow-ink);
+}
+.field-boxed {
+  box-shadow: 3px 3px 0 0 var(--tds-shadow-ink);
+}
+.cookie-notice {
+  box-shadow: 6px 6px 0 0 var(--tds-shadow-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.btn.btn-primary, .btn.btn-ghost):is(:hover, :focus-visible, :active) {
+    translate: none;
+  }
+}
