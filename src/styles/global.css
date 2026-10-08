@@ -256,30 +256,30 @@
       stroke-opacity var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
   }
 
-  /* Accents answer with SCALE, not opacity: theirs is already driven by
-     `auth-art-pulse` on the group above, and a running animation beats a
+  /* Accents answer hover with SCALE, not opacity: theirs is already driven
+     by `auth-art-pulse` on the group above, and a running animation beats a
      transition outright. `fill-box` grows a dot about its own centre. */
   .auth-art__mark--accent {
     transform-box: fill-box;
     transform-origin: 50% 50%;
-    transform: scale(calc(1 + var(--auth-energy, 0) * 0.55));
     transition: transform var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
   }
 
   /* ---- The hard shadow, answered like a button ----
 
      A shadowed shape is a button's shape: on hover it LIFTS toward the pointer
-     (half its offset up-left, so the shadow grows by half), and while someone
-     types it PRESSES into its shadow — the same lift-and-press the login's own
-     buttons do (tds-shared, "Hard 2D shadows").
+     (half its offset up-left, so the shadow grows by half), the same lift the
+     login's own buttons do (tds-shared, "Hard 2D shadows"). The PRESS is a
+     keystroke answer of its own (`press` in artwork.ts), fired per key on one
+     shape at a time rather than on all of them at once.
 
      `translate`, not `transform`: this element is the motion group, already
      animating `transform`. The individual property composes OUTSIDE it, so the
-     press goes down-right even on a tile that is mid-turn. The shadow itself
-     never moves; only the face does. */
+     lift goes up-left even on a tile that is mid-turn. The shadow itself never
+     moves; only the face does. */
   .auth-art__raise {
-    translate: calc(var(--auth-sh, 0px) * (var(--auth-energy, 0) * 0.8 - var(--auth-lift, 0)))
-      calc(var(--auth-sh, 0px) * (var(--auth-energy, 0) * 0.8 - var(--auth-lift, 0)));
+    translate: calc(var(--auth-sh, 0px) * -1 * var(--auth-lift, 0))
+      calc(var(--auth-sh, 0px) * -1 * var(--auth-lift, 0));
     transition: translate var(--tds-dur-base, 300ms) var(--tds-ease-out, ease-out);
   }
 
@@ -302,13 +302,16 @@
       stroke-opacity: 0.78;
     }
     .auth-art__stage:hover .auth-art__mark--accent {
-      transform: scale(calc(1.35 + var(--auth-energy, 0) * 0.55));
+      transform: scale(1.35);
     }
   }
 
   /* ---- Interaction: typing ----
 
-     The whole composition inhales while someone types. Its own group, outside
+     Each keystroke fires the scene's own answer from the component (Web
+     Animations on `rotate`, `scale` and `translate`, never on the `transform`
+     the loops below own). On top of that, the whole composition inhales while
+     someone types. Its own group, outside
      the sway: sway ANIMATES `transform` and this TRANSITIONS it, and an
      animation on the same property wins. Scale only ever grows, so no spanning
      mark's overhang can be pulled inside the frame. */
@@ -317,13 +320,6 @@
     transform-origin: 50% 50%;
     transform: scale(calc(1 + var(--auth-energy, 0) * 0.035));
     transition: transform var(--tds-dur-slow, 600ms) var(--tds-ease-out, ease-out);
-  }
-
-  /* The per-keystroke burst. Only the resting geometry lives here; the expansion
-     is a Web Animation fired from the component. */
-  .auth-art__ripple {
-    transform-box: fill-box;
-    transform-origin: 50% 50%;
   }
 }
 @keyframes auth-art-in {
@@ -759,6 +755,17 @@
 :is(.btn.btn-primary, .btn.btn-ghost):active:not(:disabled) {
   translate: 2px 2px;
   box-shadow: 1px 1px 0 0 var(--tds-shadow-ink);
+}
+/* A navy button never casts a navy shadow. `--tds-shadow-ink` IS the brand
+   navy on paper (and its periwinkle twin in dark mode), so the primary button
+   and its offset fused into one slab — the shape read as a thicker button, not
+   as a lifted one. The filled button takes the coral of the brand accent
+   instead, in both themes; the ghost button keeps the navy ink, which is the
+   right contrast under a light fill. Declared on the button itself so it beats
+   tds-shared's `[data-surface="panel"] .btn-primary` mix on the plain pages. */
+.auth-form .btn-primary,
+.btn.btn-primary {
+  --tds-shadow-ink: var(--color-accent-pink);
 }
 /* No `.field-boxed` here: a field is pressed IN (tds-shared's
    `--tds-shadow-inset`), never lifted by the outer offset the buttons take. */

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
+  ARRIVAL_MS,
   BLUR_LEVELS,
-  RIPPLE_SLOTS,
   VIEWBOX,
   generateArtwork,
   randomSeed,
   type Artwork,
   type Enter,
+  type KeyPart,
   type Mark,
   type Motion,
   type Pose,
@@ -124,11 +125,109 @@ const swayVars = (sway: Artwork["sway"]): ArtStyle => ({
 /** How long after the last keystroke the composition stays "engaged". */
 const ENERGY_HOLD_MS = 900;
 /**
- * Floor on the ripple rate. A held key autorepeats at ~30/s, and restarting the
- * pool that fast produces a flicker rather than a ripple.
+ * Floor on the keystroke rate. A held key autorepeats at ~30/s, and firing the
+ * pool that fast produces a flicker rather than an answer.
  */
-const RIPPLE_MIN_GAP_MS = 110;
-const RIPPLE_MS = 1100;
+const KEY_MIN_GAP_MS = 110;
+
+/** A spring-ish ease-out with a small overshoot, for the twitches. */
+const SNAP = "cubic-bezier(0.34, 1.4, 0.64, 1)";
+const EASE_OUT = "cubic-bezier(0.16, 0.84, 0.44, 1)";
+
+/**
+ * Fire one keystroke part on its mark's groups.
+ *
+ * Each act animates a property nothing else on that element animates, so it
+ * composes with the running loops instead of fighting them: `rotate` and
+ * `scale` are individual transform properties applied OUTSIDE the `transform`
+ * the CSS loops drive; `translate` on the entrance group is free once the
+ * entrance has run (that one animates `scale`/`opacity`). Every keyframe set
+ * ends where it started, so nothing is left behind, and `fill` stays `none`.
+ *
+ * Optional-called — jsdom implements no `Element.animate`.
+ */
+function fire(pose: Element, part: KeyPart) {
+  const entrance = pose.firstElementChild;
+  if (!entrance) return;
+  const motions = entrance.querySelectorAll(".auth-art__m");
+  const face = motions[motions.length - 1];
+  const timing = (duration: number, easing = EASE_OUT): KeyframeAnimationOptions => ({
+    duration,
+    delay: part.delay,
+    easing,
+  });
+
+  switch (part.act) {
+    case "press": {
+      // Into its own shadow and back — the button press of the form beside it.
+      // The shadow's offset is the `--auth-sh` the face already carries.
+      const sh = face instanceof SVGElement ? face.style.getPropertyValue("--auth-sh") || "0.7px" : "0.7px";
+      face?.animate?.([{ translate: `${sh} ${sh}`, offset: 0.3 }], timing(360));
+      return;
+    }
+    case "signal": {
+      const signal = entrance.querySelector(".auth-art__signal");
+      signal?.animate?.(
+        [
+          { strokeDashoffset: 0.07, opacity: 1 },
+          { strokeDashoffset: -1, opacity: 1 },
+        ],
+        timing(ARRIVAL_MS + 80, "linear"),
+      );
+      return;
+    }
+    case "light":
+      entrance.animate?.([{ scale: 1 }, { scale: 2.3, offset: 0.25 }, { scale: 1 }], timing(560));
+      return;
+    case "flick":
+      // About the motion group's own pivot (the focus), shadow included.
+      for (const m of motions) {
+        m.animate?.(
+          [{ rotate: "0deg" }, { rotate: `${part.rot}deg`, offset: 0.35 }, { rotate: "0deg" }],
+          timing(900),
+        );
+      }
+      return;
+    case "whirl":
+      // A rider runs once round its whole orbit, about the focus it rides.
+      for (const m of motions)
+        m.animate?.([{ rotate: "0deg" }, { rotate: `${part.rot}deg` }], timing(1100, "ease-in-out"));
+      return;
+    case "flip":
+      // A full turn about the tile's centre. The shadow group turns with the
+      // same pivot from its static offset, so the shadow stays down-right.
+      for (const m of motions)
+        m.animate?.([{ rotate: "0deg" }, { rotate: `${part.rot}deg` }], timing(720, SNAP));
+      return;
+    case "spin":
+      entrance.animate?.([{ rotate: "0deg" }, { rotate: `${part.rot}deg` }], timing(480, SNAP));
+      return;
+    case "shove":
+      entrance.animate?.(
+        [
+          { translate: "0px 0px" },
+          { translate: `${part.dx}px ${part.dy}px`, offset: 0.3 },
+          { translate: "0px 0px" },
+        ],
+        timing(760),
+      );
+      return;
+    case "flutter":
+      entrance.animate?.(
+        [
+          { translate: "0px 0px" },
+          { translate: `${part.dx}px ${part.dy}px`, offset: 0.25 },
+          { translate: `${-part.dx * 0.45}px ${-part.dy * 0.45}px`, offset: 0.6 },
+          { translate: "0px 0px" },
+        ],
+        timing(820),
+      );
+      return;
+    case "advance":
+      entrance.animate?.([{ translate: "0px 0px" }, { translate: `${part.dx}px ${part.dy}px` }], timing(520));
+      return;
+  }
+}
 
 /**
  * Renders the generated composition beside the login form.
@@ -140,8 +239,8 @@ const RIPPLE_MS = 1100;
  * load, which is a hydration mismatch by construction. Generating in an effect
  * is the only variant that is both fresh per visit and correct.
  *
- * The empty first frame is invisible: the panel paints its own gradient
- * backdrop in CSS, so what the visitor sees is a brand surface that gains
+ * The empty first frame is invisible: the panel paints its own flat navy
+ * ground in CSS, so what the visitor sees is a brand surface that gains
  * shapes a frame later, not a white hole.
  *
  * **It does not read the pointer's position.** The composition answers the
@@ -158,20 +257,22 @@ export default function LoginArtwork() {
   const [art, setArt] = useState<Artwork | null>(null);
   /**
    * Reduced motion is read here rather than left to CSS alone, because the
-   * ripple bursts are Web Animations fired imperatively. A media query cannot
+   * keystroke answers are Web Animations fired imperatively. A media query cannot
    * switch those off — only not starting them can. (The hover pose IS pure CSS
    * and sits inside the same opt-in block, so it needs nothing here.)
    */
   const [motionOk, setMotionOk] = useState(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const rippleRefs = useRef<(SVGCircleElement | null)[]>([]);
+  const artRef = useRef<Artwork | null>(null);
   const decay = useRef(0);
-  const rippleSlot = useRef(0);
-  const lastRipple = useRef(0);
+  const keySlot = useRef(0);
+  const lastKey = useRef(Number.NEGATIVE_INFINITY);
 
   useEffect(() => {
-    setArt(generateArtwork(randomSeed()));
+    const generated = generateArtwork(randomSeed());
+    artRef.current = generated;
+    setArt(generated);
   }, []);
 
   useEffect(() => {
@@ -187,11 +288,17 @@ export default function LoginArtwork() {
   }, []);
 
   /**
-   * One keystroke: a ripple (immediate) plus a bump of ambient energy (slow).
+   * One keystroke: the scene's own answer (immediate) plus a bump of ambient
+   * energy (slow).
    *
-   * The split is the point. A keystroke needs an answer inside a frame or the
-   * feedback is not attributable to it, but a per-keystroke *ambient* change
-   * would strobe while someone types a password. So the burst is discrete and
+   * The answer is the composition's, not a generic burst: a pulse runs down a
+   * conduit, a mosaic tile spins, the tape pays out a unit, a raster cell lights
+   * its neighbours, a tile presses into its shadow (see `Act` in artwork.ts).
+   * The pool is fired round-robin, so consecutive keys play different parts.
+   *
+   * The split is still the point. A keystroke needs an answer inside a frame or
+   * the feedback is not attributable to it, but a per-keystroke *ambient* change
+   * would strobe while someone types a password. So the answer is discrete and
    * the field-wide response is a value that rises once and decays once.
    */
   const pulse = useCallback(() => {
@@ -205,24 +312,20 @@ export default function LoginArtwork() {
     }, ENERGY_HOLD_MS);
 
     const now = performance.now();
-    if (now - lastRipple.current < RIPPLE_MIN_GAP_MS) return;
-    lastRipple.current = now;
+    const keys = artRef.current?.keys;
+    if (!keys?.length || now - lastKey.current < KEY_MIN_GAP_MS) return;
+    lastKey.current = now;
 
-    const slot = rippleRefs.current[rippleSlot.current % RIPPLE_SLOTS];
-    rippleSlot.current++;
+    const key = keys[keySlot.current % keys.length]!;
+    keySlot.current++;
     // Web Animations rather than a CSS animation + class toggle: a keystroke has
-    // to be able to re-fire a burst that is still running, and CSS gives you
-    // that only by remounting the node (which would reset its neighbours'
-    // ambient phase) or by forcing a synchronous reflow. `fill` stays at its
-    // `none` default so the circle returns to its resting opacity: 0.
-    // Optional-called — jsdom implements no `Element.animate`.
-    slot?.animate?.(
-      [
-        { transform: "scale(0.06)", opacity: 0.5 },
-        { transform: "scale(1)", opacity: 0 },
-      ],
-      { duration: RIPPLE_MS, easing: "cubic-bezier(0.16, 0.84, 0.44, 1)" },
-    );
+    // to be able to re-fire an answer that is still running, and CSS gives you
+    // that only by remounting the node (which would reset its ambient phase) or
+    // by forcing a synchronous reflow.
+    for (const part of key.parts) {
+      const pose = stage.querySelector(`[data-mark="${part.mark}"]`);
+      if (pose) fire(pose, part);
+    }
   }, []);
 
   useEffect(() => {
@@ -310,8 +413,11 @@ export default function LoginArtwork() {
                 // transformed is the case engines are least likely to cache.
                 // Don't "simplify" this by collapsing them.
                 return (
-                  <g key={i} className="auth-art__pose" style={poseVars(mark.pose)}>
-                    <g className={`auth-art__in auth-art__in--${mark.enter.kind}`} style={enterVars(mark.enter)}>
+                  <g key={i} className="auth-art__pose" style={poseVars(mark.pose)} data-mark={i}>
+                    <g
+                      className={`auth-art__in auth-art__in--${mark.enter.kind}`}
+                      style={enterVars(mark.enter)}
+                    >
                       {/* The hard shadow: the same shape, offset down-right by a
                           STATIC attribute OUTSIDE its motion group. Inside it, a
                           tile turning a quarter would swing its shadow round to
@@ -350,30 +456,6 @@ export default function LoginArtwork() {
                   </g>
                 );
               })}
-
-              {/* Keystroke bursts. Rendered always and invisible at rest
-                  (`opacity=0`), so a keystroke costs an animation and never a
-                  mount — and under `reduce`, where nothing ever animates them,
-                  the attribute is the whole rendering. */}
-              {art.ripples.map((ripple, i) => (
-                <circle
-                  key={i}
-                  className="auth-art__ripple"
-                  ref={(el) => {
-                    rippleRefs.current[i] = el;
-                  }}
-                  cx={ripple.cx}
-                  cy={ripple.cy}
-                  // The radius the burst expands TO: the animation scales this
-                  // circle rather than animating `r`, because `r` as a CSS
-                  // property is far less evenly supported than `transform`.
-                  r={26}
-                  fill="none"
-                  stroke={ripple.hue}
-                  strokeWidth={0.6}
-                  opacity={0}
-                />
-              ))}
             </g>
           </g>
         </g>
@@ -438,7 +520,15 @@ function renderMark(mark: Mark, role: "face" | "shade") {
 
   if (mark.filled) {
     return (
-      <circle className={className} cx={mark.cx} cy={mark.cy} r={mark.r} fill={hue} fillOpacity={alpha} filter={filter} />
+      <circle
+        className={className}
+        cx={mark.cx}
+        cy={mark.cy}
+        r={mark.r}
+        fill={hue}
+        fillOpacity={alpha}
+        filter={filter}
+      />
     );
   }
 

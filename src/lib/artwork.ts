@@ -302,11 +302,54 @@ export interface Mark {
   signal?: Signal;
 }
 
-/** A keystroke burst: one expanding ring, fired from a fixed pool round-robin. */
-export interface Ripple {
-  cx: number;
-  cy: number;
-  hue: string;
+/**
+ * What a keystroke does to one mark. Each scene answers typing in its own
+ * vocabulary instead of one generic burst:
+ *
+ *  - `press`   — a shadowed shape sinks into its shadow and springs back (a key).
+ *  - `signal`  — a pulse runs along a conduit, edge to node, in one go.
+ *  - `light`   — a dot flares and settles (raster cells, terminal nodes).
+ *  - `flick`   — an arc or ring swings `rot` degrees about its pivot and back.
+ *  - `whirl`   — an orbit's rider runs once round its whole orbit.
+ *  - `flip`    — a mosaic tile spins a full turn about its own centre.
+ *  - `shove`   — a band is pushed `dx`/`dy` along its axis and returns.
+ *  - `flutter` — a paper strip lifts and settles across its run.
+ *  - `advance` — a tape pays out one major unit (`dx`/`dy`); the jump back at
+ *                the end is a whole tick period, so it is invisible.
+ *  - `spin`    — a registration cross turns a quarter (it looks the same after).
+ *
+ * Every end state is the resting state, so a burst never leaves anything behind.
+ */
+export const ACTS = [
+  "press",
+  "signal",
+  "light",
+  "flick",
+  "whirl",
+  "flip",
+  "shove",
+  "flutter",
+  "advance",
+  "spin",
+] as const;
+export type Act = (typeof ACTS)[number];
+
+export interface KeyPart {
+  /** Index into `Artwork.marks`. */
+  mark: number;
+  act: Act;
+  /** User units, for `shove`, `flutter` and `advance`. */
+  dx: number;
+  dy: number;
+  /** Degrees, for `flick`, `flip` and `spin`. */
+  rot: number;
+  /** Milliseconds after the keystroke — a signal's node flares on arrival. */
+  delay: number;
+}
+
+/** One keystroke's answer; the component fires the pool round-robin. */
+export interface Keystroke {
+  parts: KeyPart[];
 }
 
 export interface Artwork {
@@ -318,7 +361,8 @@ export interface Artwork {
   sway: { deg: number; dur: number };
   /** Pre-sorted into paint order: wash → structure → accent. */
   marks: Mark[];
-  ripples: Ripple[];
+  /** The keystroke pool, fired round-robin. Never empty. */
+  keys: Keystroke[];
 }
 
 export type Pt = [number, number];
@@ -343,8 +387,9 @@ export const WASH_ALPHA_MAX = 0.34;
  */
 export const STRAY_MAX = 22;
 
-/** Size of the ripple pool — a recycling buffer, not a composition choice. */
-export const RIPPLE_SLOTS = 3;
+/** Ceilings on a keystroke's travel, so a burst stays a twitch, not a shove off-canvas. */
+export const KEY_TRAVEL_MAX = 18;
+export const KEY_DELAY_MAX = 700;
 
 /** How far each scene may tilt. The orthogonal ones read as askew past ~10°. */
 const TILT_MAX: Record<SceneKind, number> = {
@@ -398,6 +443,18 @@ interface Ctx {
   uy: number;
   /** Running count of turning marks, so consecutive ones alternate direction. */
   turns: number;
+  /** Keystroke answers, collected by the builders against mark OBJECTS. */
+  keys: Draft[][];
+}
+
+/** A key part before paint order is known; resolved to an index afterwards. */
+interface Draft {
+  mark: Mark;
+  act: Act;
+  dx?: number;
+  dy?: number;
+  rot?: number;
+  delay?: number;
 }
 
 /**
@@ -445,6 +502,7 @@ export function generateArtwork(seed: number, scene?: SceneKind): Artwork {
     ux: Math.cos(angle),
     uy: Math.sin(angle),
     turns: 0,
+    keys: [],
   };
 
   const build: Record<SceneKind, (c: Ctx) => Mark[]> = {
@@ -458,14 +516,18 @@ export function generateArtwork(seed: number, scene?: SceneKind): Artwork {
     measure: measureScene,
   };
   const marks = sortByLayer(build[kind](ctx));
-
-  // Origins only; the expansion is fired per keystroke from the component.
-  const ripples: Ripple[] = [];
-  for (let i = 0; i < RIPPLE_SLOTS; i++) {
-    // Held well inside the frame: a ripple centred near an edge spends most of
-    // its life as an arc sliding off the crop.
-    ripples.push({ cx: r(between(22, 78)), cy: r(between(22, 78)), hue: pick([...hues, SPOT]) });
-  }
+  const keys: Keystroke[] = ctx.keys
+    .filter((parts) => parts.length > 0)
+    .map((parts) => ({
+      parts: parts.map((p) => ({
+        mark: marks.indexOf(p.mark),
+        act: p.act,
+        dx: r(p.dx ?? 0),
+        dy: r(p.dy ?? 0),
+        rot: r(p.rot ?? 0),
+        delay: Math.round(p.delay ?? 0),
+      })),
+    }));
 
   const tiltMax = TILT_MAX[kind];
   return {
@@ -474,7 +536,7 @@ export function generateArtwork(seed: number, scene?: SceneKind): Artwork {
     tilt: r(between(-tiltMax, tiltMax)),
     sway: { deg: signed(between(1.5, 3)), dur: r(between(70, 100)) },
     marks,
-    ripples,
+    keys,
   };
 }
 
@@ -526,7 +588,14 @@ class Pen {
 function capsulePath(at: Place, w: number, h: number): string {
   const rr = h / 2;
   const hw = Math.max(0, w / 2 - rr);
-  return new Pen(at).m(-hw, -rr).l(hw, -rr).a(rr, 0, 1, hw, rr).l(-hw, rr).a(rr, 0, 1, -hw, -rr).z().toString();
+  return new Pen(at)
+    .m(-hw, -rr)
+    .l(hw, -rr)
+    .a(rr, 0, 1, hw, rr)
+    .l(-hw, rr)
+    .a(rr, 0, 1, -hw, -rr)
+    .z()
+    .toString();
 }
 
 /** A rectangle with corner radius `rad`, centred on the origin. */
@@ -561,7 +630,11 @@ function quarterPath(at: Place, s: number): string {
 /** A half disc of diameter `s`, flat side down, centred on its bounding box. */
 function halfPath(at: Place, s: number): string {
   const R = s / 2;
-  return new Pen(at).m(-R, R / 2).a(R, 0, 1, R, R / 2).z().toString();
+  return new Pen(at)
+    .m(-R, R / 2)
+    .a(R, 0, 1, R, R / 2)
+    .z()
+    .toString();
 }
 
 /**
@@ -707,7 +780,9 @@ function shadeOf(ctx: Ctx): number {
 }
 
 /** Fields shared by every mark, so the builders below only state what differs. */
-function base(over: Partial<Mark> & Pick<Mark, "kind" | "at" | "hue" | "layer" | "motion" | "pose" | "opacity">): Mark {
+function base(
+  over: Partial<Mark> & Pick<Mark, "kind" | "at" | "hue" | "layer" | "motion" | "pose" | "opacity">,
+): Mark {
   return {
     filled: false,
     spans: false,
@@ -973,7 +1048,11 @@ function cross(ctx: Ctx): Mark {
  * A straight run crossing the whole frame along `deg` through (`cx`,`cy`), out
  * to OVERHANG at both ends.
  */
-function spanLine(cx: number, cy: number, deg: number): { d: string; ends: [Pt, Pt]; ux: number; uy: number } {
+function spanLine(
+  cx: number,
+  cy: number,
+  deg: number,
+): { d: string; ends: [Pt, Pt]; ux: number; uy: number } {
   const half = spanHalf(cx, cy);
   const at = place(cx, cy, deg);
   const a = at([-half, 0]).map(r) as Pt;
@@ -1026,7 +1105,7 @@ function ruler(ctx: Ctx, cx: number, cy: number, deg: number): Mark {
   const rad = (deg * Math.PI) / 180;
   const ux = Math.cos(rad);
   const uy = Math.sin(rad);
-  return base({
+  const tape = base({
     kind: "path",
     d: pen.toString(),
     spans: true,
@@ -1041,6 +1120,10 @@ function ruler(ctx: Ctx, cx: number, cy: number, deg: number): Mark {
     pose: poseFor(ctx, "structure", true),
     enter: enter(ctx, "fade", 0, 400),
   });
+  // A keystroke pays out exactly one MAJOR unit (five ticks): the pattern is
+  // periodic in that length, so the snap back when the burst ends is invisible.
+  ctx.keys.push([{ mark: tape, act: "advance", dx: ux * step * 5, dy: uy * step * 5 }]);
+  return tape;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1076,8 +1159,16 @@ function constructScene(ctx: Ctx): Mark[] {
   for (let i = 0; i < rings; i++) marks.push(ring(ctx));
   const dots = Math.floor(ctx.between(2, 4.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  pressKeys(ctx, marks);
+  for (const mark of marks) {
+    if (mark.motion.kind === "orbit")
+      ctx.keys.push([{ mark, act: "flick", rot: Math.sign(mark.motion.rot) * 24 }]);
+  }
   return marks;
 }
+
+/** How long a keystroke's pulse takes to reach the end of its conduit. */
+export const ARRIVAL_MS = 520;
 
 function circuitScene(ctx: Ctx): Mark[] {
   const marks: Mark[] = [field(ctx), slab(ctx)];
@@ -1140,44 +1231,48 @@ function circuitScene(ctx: Ctx): Mark[] {
     const end = pts[pts.length - 1]!;
     const hue = ctx.pick(ctx.hues);
     const delay = 80 + i * 160;
-    marks.push(
-      base({
-        kind: "path",
-        d: conduitPath(pts, ctx.between(2.5, 4.5)),
-        at: [r(end[0]), r(end[1])],
-        hue,
-        width: r3(ctx.between(0.45, 0.75)),
-        opacity: r3(ctx.between(0.45, 0.72)),
-        measured: true,
-        layer: "structure",
-        motion: still(),
-        pose: boardPose,
-        enter: enter(ctx, "draw", delay, delay + 60),
-        signal: (() => {
-          const dur = r(ctx.between(3.5, 7));
-          return { hue: ctx.rng() < 0.6 ? SPOT : hue, dur, delay: ctx.phase(dur) };
-        })(),
-      }),
-    );
+    const conduit = base({
+      kind: "path",
+      d: conduitPath(pts, ctx.between(2.5, 4.5)),
+      at: [r(end[0]), r(end[1])],
+      hue,
+      width: r3(ctx.between(0.45, 0.75)),
+      opacity: r3(ctx.between(0.45, 0.72)),
+      measured: true,
+      layer: "structure",
+      motion: still(),
+      pose: boardPose,
+      enter: enter(ctx, "draw", delay, delay + 60),
+      signal: (() => {
+        const dur = r(ctx.between(3.5, 7));
+        return { hue: ctx.rng() < 0.6 ? SPOT : hue, dur, delay: ctx.phase(dur) };
+      })(),
+    });
+    marks.push(conduit);
+    // A keystroke sends a pulse down this conduit; what it runs into answers
+    // when the pulse arrives — a chip presses like a key, a node flares.
+    const key: Draft[] = [{ mark: conduit, act: "signal" }];
+    if (toChip) key.push({ mark: chipMarks[i % chips.length]!, act: "press", delay: ARRIVAL_MS });
+    ctx.keys.push(key);
     // The terminal node sits ON the board: structure, with the board's pose,
     // or hover would pull it off the end of its own conduit.
     if (!toChip) {
-      nodes.push(
-        base({
-          kind: "circle",
-          cx: r(end[0]),
-          cy: r(end[1]),
-          r: r(ctx.between(1, 1.6)),
-          filled: true,
-          at: [r(end[0]), r(end[1])],
-          hue: SPOT,
-          opacity: r3(ctx.between(0.8, 0.95)),
-          layer: "structure",
-          motion: still(),
-          pose: boardPose,
-          enter: enter(ctx, "pop", delay + 700, delay + 800),
-        }),
-      );
+      const node = base({
+        kind: "circle",
+        cx: r(end[0]),
+        cy: r(end[1]),
+        r: r(ctx.between(1, 1.6)),
+        filled: true,
+        at: [r(end[0]), r(end[1])],
+        hue: SPOT,
+        opacity: r3(ctx.between(0.8, 0.95)),
+        layer: "structure",
+        motion: still(),
+        pose: boardPose,
+        enter: enter(ctx, "pop", delay + 700, delay + 800),
+      });
+      nodes.push(node);
+      key.push({ mark: node, act: "light", delay: ARRIVAL_MS });
     }
   }
   marks.push(...nodes, ...chipMarks);
@@ -1230,6 +1325,20 @@ function orbitScene(ctx: Ctx): Mark[] {
   }
   const dots = Math.floor(ctx.between(1, 3.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  for (const [fx, fy] of foci) {
+    const onFocus = (m: Mark) => m.motion.kind === "spin" && m.motion.ox === r(fx) && m.motion.oy === r(fy);
+    const core = marks.find((m) => m.shade > 0 && m.at[0] === r(fx) && m.at[1] === r(fy));
+    const swing: Draft[] = marks
+      .filter((m) => onFocus(m) && m.layer === "structure")
+      .map((m) => ({ mark: m, act: "flick" as const, rot: Math.sign((m.motion as Spin).rot) * 28 }));
+    if (core) swing.unshift({ mark: core, act: "press" });
+    ctx.keys.push(swing);
+    ctx.keys.push(
+      marks
+        .filter((m) => onFocus(m) && m.layer === "accent")
+        .map((m) => ({ mark: m, act: "whirl" as const, rot: Math.sign((m.motion as Spin).rot) * 360 })),
+    );
+  }
   return marks;
 }
 
@@ -1304,6 +1413,15 @@ function strataScene(ctx: Ctx): Mark[] {
 
   const dots = Math.floor(ctx.between(2, 4.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  let sign = 1;
+  for (const mark of marks) {
+    if (!mark.spans || mark.motion.kind !== "slide") continue;
+    const len = Math.hypot(mark.motion.dx, mark.motion.dy) || 1;
+    ctx.keys.push([
+      { mark, act: "shove", dx: (sign * 7 * mark.motion.dx) / len, dy: (sign * 7 * mark.motion.dy) / len },
+    ]);
+    sign = -sign;
+  }
   return marks;
 }
 
@@ -1332,6 +1450,7 @@ function rasterScene(ctx: Ctx): Mark[] {
 
   const grid: Mark[] = [];
   const accents: Mark[] = [];
+  const cells: Mark[] = [];
   // One pose for the matrix, delayed along the wave: the block moves as a
   // block, and the movement runs through it the way the pulse does.
   const gridPose = poseFor(ctx, "structure");
@@ -1347,26 +1466,28 @@ function rasterScene(ctx: Ctx): Mark[] {
         delay: r(-waveDur * 0.9 * along),
       };
       if (lit.has(j * cols + i)) {
-        accents.push(dot(ctx, x, y, ctx.between(1.1, 1.6), () => wave, true, [700, 1100]));
+        const d = dot(ctx, x, y, ctx.between(1.1, 1.6), () => wave, true, [700, 1100]);
+        accents.push(d);
+        cells[j * cols + i] = d;
         continue;
       }
-      grid.push(
-        base({
-          kind: "circle",
-          cx: r(x),
-          cy: r(y),
-          r: r(ctx.between(0.45, 0.65)),
-          filled: true,
-          at: [r(x), r(y)],
-          hue,
-          opacity: r3(ctx.between(0.5, 0.75)),
-          layer: "structure",
-          motion: wave,
-          pose: staggered(gridPose, along),
-          // The block builds up along the wave, too.
-          enter: enter(ctx, "pop", 120 + along * 800, 160 + along * 800),
-        }),
-      );
+      const cell = base({
+        kind: "circle",
+        cx: r(x),
+        cy: r(y),
+        r: r(ctx.between(0.45, 0.65)),
+        filled: true,
+        at: [r(x), r(y)],
+        hue,
+        opacity: r3(ctx.between(0.5, 0.75)),
+        layer: "structure",
+        motion: wave,
+        pose: staggered(gridPose, along),
+        // The block builds up along the wave, too.
+        enter: enter(ctx, "pop", 120 + along * 800, 160 + along * 800),
+      });
+      grid.push(cell);
+      cells[j * cols + i] = cell;
     }
   }
   marks.push(...grid);
@@ -1375,13 +1496,43 @@ function rasterScene(ctx: Ctx): Mark[] {
   const tiles = Math.floor(ctx.between(1, 2.99));
   for (let i = 0; i < tiles; i++) {
     marks.push(
-      tile(ctx, ctx.between(20, 80), ctx.between(20, 80), ctx.between(9, 14), ctx.pick(TILE_FORMS), bob, shade, [
-        900, 1300,
-      ]),
+      tile(
+        ctx,
+        ctx.between(20, 80),
+        ctx.between(20, 80),
+        ctx.between(9, 14),
+        ctx.pick(TILE_FORMS),
+        bob,
+        shade,
+        [900, 1300],
+      ),
     );
   }
   marks.push(ring(ctx));
   marks.push(...accents);
+  // Each keystroke lights a cell, and the light steps out to its four
+  // neighbours a beat later — a keypad being played, not a drop in water.
+  const presses = shuffle(
+    Array.from({ length: cols * rows }, (_, k) => k),
+    ctx.rng,
+  ).slice(0, 10);
+  for (const k of presses) {
+    const i = k % cols;
+    const j = Math.floor(k / cols);
+    const key: Draft[] = [{ mark: cells[k]!, act: "light" }];
+    for (const [di, dj] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const ni = i + di;
+      const nj = j + dj;
+      if (ni >= 0 && ni < cols && nj >= 0 && nj < rows)
+        key.push({ mark: cells[nj * cols + ni]!, act: "light", delay: 90 });
+    }
+    ctx.keys.push(key);
+  }
   return marks;
 }
 
@@ -1434,6 +1585,13 @@ function mosaicScene(ctx: Ctx): Mark[] {
 
   const dots = Math.floor(ctx.between(2, 4.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  // In a shuffled order, so typing does not walk the floor row by row.
+  for (const mark of shuffle(
+    marks.filter((m) => m.motion.kind === "turn"),
+    ctx.rng,
+  )) {
+    ctx.keys.push([{ mark, act: "flip", rot: Math.sign((mark.motion as Turn).rot) * 360 }]);
+  }
   return marks;
 }
 
@@ -1475,6 +1633,12 @@ function ribbonScene(ctx: Ctx): Mark[] {
   for (let i = 0; i < rings; i++) marks.push(ring(ctx));
   const dots = Math.floor(ctx.between(2, 4.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  let lift = 1;
+  for (const mark of marks) {
+    if (!mark.spans) continue;
+    ctx.keys.push([{ mark, act: "flutter", dy: lift * 3.2 }]);
+    lift = -lift;
+  }
   return marks;
 }
 
@@ -1488,9 +1652,7 @@ function measureScene(ctx: Ctx): Mark[] {
   if (tapes === 2) {
     const crossing = ctx.rng() < 0.5;
     marks.push(
-      crossing
-        ? ruler(ctx, ctx.between(28, 72), 50, deg + 90)
-        : ruler(ctx, 50, ctx.between(28, 72), deg),
+      crossing ? ruler(ctx, ctx.between(28, 72), 50, deg + 90) : ruler(ctx, 50, ctx.between(28, 72), deg),
     );
   }
 
@@ -1501,9 +1663,16 @@ function measureScene(ctx: Ctx): Mark[] {
   const tiles = Math.floor(ctx.between(1, 2.99));
   for (let i = 0; i < tiles; i++) {
     marks.push(
-      tile(ctx, ctx.between(20, 80), ctx.between(20, 80), ctx.between(9, 15), ctx.pick(TILE_FORMS), bob, shade, [
-        500, 900,
-      ]),
+      tile(
+        ctx,
+        ctx.between(20, 80),
+        ctx.between(20, 80),
+        ctx.between(9, 15),
+        ctx.pick(TILE_FORMS),
+        bob,
+        shade,
+        [500, 900],
+      ),
     );
   }
 
@@ -1547,7 +1716,30 @@ function measureScene(ctx: Ctx): Mark[] {
 
   const dots = Math.floor(ctx.between(1, 2.99));
   for (let i = 0; i < dots; i++) marks.push(dot(ctx));
+  for (const mark of marks) {
+    if (mark.layer === "accent" && mark.kind === "path" && !mark.filled)
+      ctx.keys.push([{ mark, act: "spin", rot: 90 }]);
+  }
+  pressKeys(
+    ctx,
+    marks.filter((m) => m.layer === "structure"),
+  );
+  // The brand bar presses as one, segment by segment.
+  ctx.keys.push(
+    marks
+      .filter((m) => m.layer === "accent" && m.kind === "path" && m.filled)
+      .map((mark, i) => ({ mark, act: "press" as const, delay: i * 70 })),
+  );
   return marks;
+}
+
+/* ---------------------------------------------------------------------------
+   Keystroke helpers.
+   ------------------------------------------------------------------------ */
+
+/** Every shadowed shape becomes a key of its own: it sinks into its shadow. */
+function pressKeys(ctx: Ctx, marks: Mark[]): void {
+  for (const mark of marks) if (mark.shade > 0) ctx.keys.push([{ mark, act: "press" }]);
 }
 
 /* ---------------------------------------------------------------------------

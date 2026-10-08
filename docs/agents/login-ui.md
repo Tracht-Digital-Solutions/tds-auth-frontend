@@ -38,6 +38,9 @@ page is often opened on shared or projected screens, and a toggle can be forgott
 - **The remember-me checkbox is `.auth-remember`** with an explicit `id` / `htmlFor` inside a `<div>`.
   `.auth-form > label` (child combinator) styles field labels; a wrapping label made the option read
   as a third input. Keep the child combinator.
+- **A navy button never casts a navy shadow.** `--tds-shadow-ink` is the brand navy, so under
+  `.btn-primary` the offset fused into one slab; the filled button re-points it to
+  `--color-accent-pink` (both themes). The ghost button keeps the navy ink.
 - **Buttons carry `.btn` and a `.btn-*` variant.** `.btn` is geometry, `.btn-primary` colour only.
   `global.css` may position a button (`.auth-form .btn { margin-top }`) but never re-declare its
   geometry.

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTS,
   BLUR_LEVELS,
   ENTER_MAX,
+  KEY_DELAY_MAX,
+  KEY_TRAVEL_MAX,
   LAYERS,
   MARKS_MAX,
   OVERHANG,
   PALETTE,
   POSE_BANDS,
   POSE_DELAY_MAX,
-  RIPPLE_SLOTS,
   SCENES,
   SHADE_RANGE,
   SPOT,
@@ -51,13 +53,9 @@ function sweep(): Array<{ label: string; art: Artwork }> {
 
 const ALL = sweep();
 
-/** Every hue a composition puts on screen, ripples and signals included. */
+/** Every hue a composition puts on screen, signals included. */
 function huesOf(art: Artwork): string[] {
-  return [
-    ...art.marks.map((m) => m.hue),
-    ...art.marks.flatMap((m) => (m.signal ? [m.signal.hue] : [])),
-    ...art.ripples.map((x) => x.hue),
-  ];
+  return [...art.marks.map((m) => m.hue), ...art.marks.flatMap((m) => (m.signal ? [m.signal.hue] : []))];
 }
 
 function marksOn(art: Artwork, layer: Layer): Mark[] {
@@ -162,7 +160,10 @@ describe("scenes", () => {
     // The hard 2D offset is the signature of the current brand surfaces; a
     // scene without a single shadowed shape has fallen out of the style.
     for (const { label, art } of ALL) {
-      expect(art.marks.some((m) => m.shade > 0), label).toBe(true);
+      expect(
+        art.marks.some((m) => m.shade > 0),
+        label,
+      ).toBe(true);
     }
   });
 
@@ -218,14 +219,13 @@ describe("every composition is well-formed", () => {
   it("only ever references theme tokens, never a literal colour", () => {
     for (const { label, art } of ALL) {
       for (const hue of huesOf(art)) expect(PALETTE, label).toContain(hue);
-      expect(art.ripples.length, label).toBe(RIPPLE_SLOTS);
     }
   });
 
   it("limits one composition to three field hues plus the gold spot", () => {
-    // A full palette at once reads as a colour test card. Ripples and signals
-    // count: they only show while something happens, so a stray hue there would
-    // never turn up in a screenshot.
+    // A full palette at once reads as a colour test card. Signals count: they
+    // only show while something happens, so a stray hue there would never turn
+    // up in a screenshot.
     for (const { label, art } of ALL) {
       const hues = new Set(huesOf(art));
       hues.delete(SPOT);
@@ -251,7 +251,8 @@ describe("every composition is well-formed", () => {
       for (const mark of art.marks) {
         if (!mark.spans) continue;
         expect(mark.ends, label).toBeDefined();
-        for (const end of mark.ends!) expect(outside(end), `${label} ${end}`).toBeGreaterThanOrEqual(OVERHANG - 0.01);
+        for (const end of mark.ends!)
+          expect(outside(end), `${label} ${end}`).toBeGreaterThanOrEqual(OVERHANG - 0.01);
       }
     }
   });
@@ -321,14 +322,93 @@ describe("every composition is well-formed", () => {
     expect([...BLUR_LEVELS]).toEqual([...BLUR_LEVELS].sort((a, b) => a - b));
     expect(Math.max(...BLUR_LEVELS)).toBeLessThanOrEqual(20);
   });
+});
 
-  it("keeps every ripple origin well inside the crop", () => {
+describe("typing: every scene answers in its own vocabulary", () => {
+  /** Which acts a scene may use — the whole point is that they differ. */
+  const VOCABULARY: Record<SceneKind, readonly string[]> = {
+    constructs: ["press", "flick"],
+    circuits: ["signal", "press", "light"],
+    orbits: ["press", "flick", "whirl"],
+    strata: ["shove"],
+    raster: ["light"],
+    mosaic: ["flip"],
+    ribbons: ["flutter"],
+    measure: ["advance", "spin", "press"],
+  };
+
+  it("gives every composition a pool of several keystroke answers", () => {
+    // One answer fired over and over is the generic burst this replaced.
     for (const { label, art } of ALL) {
-      for (const ripple of art.ripples) {
-        expect(ripple.cx, label).toBeGreaterThanOrEqual(20);
-        expect(ripple.cx, label).toBeLessThanOrEqual(80);
-        expect(ripple.cy, label).toBeGreaterThanOrEqual(20);
-        expect(ripple.cy, label).toBeLessThanOrEqual(80);
+      expect(art.keys.length, label).toBeGreaterThanOrEqual(2);
+      for (const key of art.keys) expect(key.parts.length, label).toBeGreaterThan(0);
+    }
+  });
+
+  it("answers only with its own scene's acts, and no two scenes share a vocabulary", () => {
+    for (const { label, art } of ALL) {
+      for (const { parts } of art.keys) {
+        for (const part of parts) {
+          expect(ACTS, label).toContain(part.act);
+          expect(VOCABULARY[art.scene], label).toContain(part.act);
+        }
+      }
+    }
+    const signatures = SCENES.map((scene) => [...VOCABULARY[scene]].sort().join("+"));
+    expect(new Set(signatures).size).toBe(SCENES.length);
+  });
+
+  it("aims every part at a mark that can perform it", () => {
+    // A part aimed at the wrong mark fails silently: the animation targets an
+    // element that has no signal, no shadow, no pivot — and nothing moves.
+    for (const { label, art } of ALL) {
+      for (const { parts } of art.keys) {
+        for (const part of parts) {
+          const mark = art.marks[part.mark];
+          expect(mark, `${label} #${part.mark}`).toBeDefined();
+          if (part.act === "signal") expect(mark!.signal, label).toBeDefined();
+          if (part.act === "press") expect(mark!.shade, label).toBeGreaterThan(0);
+          if (part.act === "flip") expect(mark!.motion.kind, label).toBe("turn");
+          if (part.act === "flick") expect(["spin", "orbit"], label).toContain(mark!.motion.kind);
+          if (part.act === "whirl") expect(mark!.motion.kind, label).toBe("spin");
+          if (part.act === "light") expect(mark!.filled, label).toBe(true);
+          if (part.act === "advance" || part.act === "shove" || part.act === "flutter") {
+            expect(mark!.spans, label).toBe(true);
+          }
+          if (part.act === "spin") expect(mark!.layer, label).toBe("accent");
+          expect(mark!.layer, label).not.toBe("wash");
+        }
+      }
+    }
+  });
+
+  it("keeps every answer a twitch: bounded travel, bounded delay, back to rest", () => {
+    for (const { label, art } of ALL) {
+      for (const { parts } of art.keys) {
+        for (const part of parts) {
+          expect(Math.hypot(part.dx, part.dy), label).toBeLessThanOrEqual(KEY_TRAVEL_MAX);
+          expect(part.delay, label).toBeGreaterThanOrEqual(0);
+          expect(part.delay, label).toBeLessThanOrEqual(KEY_DELAY_MAX);
+          // A flip must land on the same picture: a whole turn.
+          if (part.act === "flip") expect(Math.abs(part.rot), label).toBe(360);
+          // A cross is symmetric under a quarter turn, so 90 lands on itself.
+          if (part.act === "spin") expect(Math.abs(part.rot) % 90, label).toBe(0);
+          if (part.act === "flick") expect(Math.abs(part.rot), label).toBeLessThanOrEqual(60);
+          if (part.act === "whirl") expect(Math.abs(part.rot), label).toBe(360);
+        }
+      }
+    }
+  });
+
+  it("pays a tape out by exactly one major unit, so the snap back is invisible", () => {
+    for (const { label, art } of ALL.filter(({ art }) => art.scene === "measure")) {
+      for (const { parts } of art.keys) {
+        for (const part of parts) {
+          if (part.act !== "advance") continue;
+          // Five ticks of 2.2–3.4 units each.
+          expect(Math.hypot(part.dx, part.dy), label).toBeGreaterThanOrEqual(10.9);
+          expect(Math.hypot(part.dx, part.dy), label).toBeLessThanOrEqual(17.1);
+        }
       }
     }
   });
@@ -416,8 +496,9 @@ describe("the motion is ambient, not animated", () => {
     for (const { label, art } of ALL) {
       const turns = art.marks
         .map((m) => m.motion)
-        .filter((m): m is Extract<typeof m, { kind: "orbit" | "spin" | "turn" }> =>
-          m.kind === "orbit" || m.kind === "spin" || m.kind === "turn",
+        .filter(
+          (m): m is Extract<typeof m, { kind: "orbit" | "spin" | "turn" }> =>
+            m.kind === "orbit" || m.kind === "spin" || m.kind === "turn",
         );
       for (let i = 1; i < turns.length; i++) {
         expect(Math.sign(turns[i]!.rot), `${label} #${i}`).not.toBe(Math.sign(turns[i - 1]!.rot));
@@ -476,9 +557,10 @@ describe("the hover pose", () => {
       for (const mark of art.marks) {
         expect(Number.isFinite(mark.pose.dx + mark.pose.dy), label).toBe(true);
       }
-      expect(generateArtwork(art.seed, art.scene).marks.map((m) => m.pose), label).toEqual(
-        art.marks.map((m) => m.pose),
-      );
+      expect(
+        generateArtwork(art.seed, art.scene).marks.map((m) => m.pose),
+        label,
+      ).toEqual(art.marks.map((m) => m.pose));
     }
   });
 

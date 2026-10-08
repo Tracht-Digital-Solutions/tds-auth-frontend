@@ -71,8 +71,8 @@ group**, with the same motion values inside. Inside the motion group a turning t
 shadow round to the top-left. Only solid shapes (alpha ≥ 0.8) cast one.
 
 The face's motion group gets `.auth-art__raise` and `--auth-sh`; its CSS `translate` (not
-`transform`, which the same group animates) lifts it half an offset on hover (`--auth-lift`) and
-presses it into the shadow while typing (`--auth-energy`) — the buttons' lift-and-press.
+`transform`, which the same group animates) lifts it half an offset on hover (`--auth-lift`) — the
+buttons' lift. The press is a keystroke answer (below), one shape per key.
 
 ## Motion
 
@@ -107,9 +107,25 @@ Both are inert under `reduce`.
   Hairlines (`--line`) thicken and brighten, accents scale, raised tiles lift.
 - **Hover rules sit inside `@media (hover: hover) and (pointer: fine)`**.
 - **Each mark's alpha is a presentation attribute**, and `auth-art-pulse` rests at 1 and multiplies.
-- **Typing → energy + a burst.** `--auth-energy` rises per keystroke (decays ~900 ms after the last):
-  the composition breathes, accents swell, raised tiles press in; plus one ripple from a pool of
-  three, via Web Animations (optional-called; jsdom has none).
+- **Typing → the scene's own answer + energy.** No generic burst (the old ripple pool is gone): the
+  generator emits `Artwork.keys`, a pool of `Keystroke`s fired round-robin, each a few `KeyPart`s
+  (`act` on a mark index). Vocabulary per scene, pinned distinct in `artwork.test.ts`:
+
+  | Scene | Answer |
+  |---|---|
+  | `constructs` | a tile presses into its shadow; rings flick |
+  | `circuits` | a signal runs down a conduit; the chip presses / the node flares on arrival (`ARRIVAL_MS`) |
+  | `orbits` | the core presses and its arcs flick; a rider whirls once round its orbit |
+  | `strata` | a band is shoved along its axis |
+  | `raster` | a cell lights, its four neighbours a beat later |
+  | `mosaic` | a tile spins a full turn (shadow stays down-right) |
+  | `ribbons` | a strip flutters |
+  | `measure` | the tape pays out one major unit (5 ticks, so the snap back is invisible); a cross turns 90°; the brand bar presses |
+
+  `LoginArtwork.tsx` (`fire`) animates only `rotate`, `scale` and `translate` (individual properties
+  that compose outside the loops' `transform`), on the motion groups or the entrance group, via
+  Web Animations (optional-called; jsdom has none). Every keyframe set ends at rest; rate floor
+  110 ms. `--auth-energy` (decays ~900 ms after the last key) only drives the breathe.
 - **Reduced motion is gated in JS too** (`matchMedia` live, no typing subscription).
 
 ## The typing signal (`src/lib/artworkSignal.ts`)
@@ -123,5 +139,6 @@ Form and artwork are separate React roots, so a `window` CustomEvent is the bus.
 
 - read `data-scene` off the `<svg>` to be sure you saw all eight scenes, in both page themes;
 - compare `getComputedStyle(...).transform` on `.auth-art__pose` at two cursor positions inside the
-  panel (identical), and `translate` on `.auth-art__raise` hovered vs. while typing;
+  panel (identical), `translate` on `.auth-art__raise` hovered, and `document.getAnimations()`
+  (script `Animation`s only) after a keystroke in each scene;
 - check `document.getAnimations()` under `reducedMotion: "reduce"` (none on the artwork).

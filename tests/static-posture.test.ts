@@ -257,7 +257,6 @@ describe("login chrome", () => {
       ".auth-art__in--draw",
       ".auth-art__signal",
       ".auth-art__breathe",
-      ".auth-art__ripple",
       ".auth-art__stage:hover",
     ]) {
       expect(noPreferenceBlock, `${rule} must sit inside the opt-in block`).toContain(rule);
@@ -313,6 +312,14 @@ describe("login chrome", () => {
     // silently vanish, and the panel would be back to the aurora look.
     expect(code(globalCss)).not.toMatch(/mix-blend-mode/);
     expect(ruleBody(".auth-art__stage")).toMatch(/--auth-shade:/);
+  });
+
+  it("never gives a navy button a navy shadow", () => {
+    // `--tds-shadow-ink` is the brand navy: under a navy fill the offset fused
+    // with the button into one slab. The filled button takes the brand coral.
+    expect(code(globalCss)).toMatch(
+      /\.auth-form \.btn-primary,\s*\.btn\.btn-primary\s*\{\s*--tds-shadow-ink:\s*var\(--color-accent-pink\);/,
+    );
   });
 
   it("keeps the shadow offset static and the lift on its own property", () => {

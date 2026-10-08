@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { RIPPLE_SLOTS, SCENES } from "~/lib/artwork";
+import { SCENES } from "~/lib/artwork";
 import { signalTyping } from "~/lib/artworkSignal";
 import LoginArtwork from "~/components/LoginArtwork";
 
@@ -131,13 +131,9 @@ describe("rendering", () => {
     }
   });
 
-  it("renders the ripple pool up front, invisible", () => {
-    // Mounting a circle per keystroke would cost a React render on every key and
-    // reset its neighbours' ambient phase.
-    const ripples = renderStage().querySelectorAll(".auth-art__ripple");
-
-    expect(ripples.length).toBe(RIPPLE_SLOTS);
-    for (const ripple of ripples) expect(ripple.getAttribute("opacity")).toBe("0");
+  it("renders no generic keystroke burst", () => {
+    // Typing is answered by the scene's own marks now; the ring pool is gone.
+    expect(renderStage().querySelector(".auth-art__ripple")).toBeNull();
   });
 });
 
@@ -206,6 +202,41 @@ describe("answering the keyboard", () => {
     // A handler that outlives the island writes to a detached node forever.
     expect(() => act(() => signalTyping())).not.toThrow();
     expect(read(stage, "--auth-energy")).toBe("");
+  });
+});
+
+describe("each keystroke plays a part of the scene", () => {
+  /** `Element.animate` stubbed onto the prototype; jsdom has none. */
+  function stubAnimate() {
+    const calls: Element[] = [];
+    const animate = vi.fn(function (this: Element) {
+      calls.push(this);
+      return {} as Animation;
+    });
+    Object.defineProperty(Element.prototype, "animate", { value: animate, configurable: true });
+    return { calls, restore: () => delete (Element.prototype as Partial<Element>).animate };
+  }
+
+  it("animates only marks of the composition, and different ones on consecutive keys", () => {
+    vi.useFakeTimers();
+    const { calls, restore } = stubAnimate();
+    try {
+      const stage = renderStage();
+      const fired: Set<string>[] = [];
+      for (let k = 0; k < 4; k++) {
+        calls.length = 0;
+        act(() => signalTyping());
+        vi.advanceTimersByTime(200);
+        expect(calls.length, `key ${k}`).toBeGreaterThan(0);
+        for (const el of calls) expect(el.closest("[data-mark]"), `key ${k}`).not.toBeNull();
+        fired.push(new Set(calls.map((el) => el.closest("[data-mark]")!.getAttribute("data-mark")!)));
+      }
+      // Round-robin over the pool: the first two keys never hit the same set.
+      expect([...fired[0]!].sort().join()).not.toBe([...fired[1]!].sort().join());
+      expect(stage.querySelector(".auth-art__canvas")).not.toBeNull();
+    } finally {
+      restore();
+    }
   });
 });
 
