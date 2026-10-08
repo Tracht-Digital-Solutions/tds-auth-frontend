@@ -6,9 +6,11 @@ import {
   generateArtwork,
   randomSeed,
   type Artwork,
+  type Enter,
   type Mark,
   type Motion,
   type Pose,
+  type Signal,
 } from "~/lib/artwork";
 import { onTyping } from "~/lib/artworkSignal";
 
@@ -42,6 +44,7 @@ const motionVars = (m: Motion): ArtStyle => {
     case "orbit":
       return { ...timing, "--auth-rot": `${m.rot}deg` };
     case "spin":
+    case "turn":
       return {
         ...timing,
         "--auth-rot": `${m.rot}deg`,
@@ -85,6 +88,28 @@ const poseVars = (p: Pose): ArtStyle => ({
   "--auth-pscale": `${p.scale}`,
   "--auth-pdelay": `${p.delay}ms`,
 });
+
+/**
+ * The one-shot build-up. Its own group, between the pose and the motion: it
+ * animates `scale` and `opacity` (a `pop`) or the stroke's dash (a `draw`), and
+ * neither may share an element with a transform that is already animating or
+ * transitioning.
+ */
+const enterVars = (e: Enter): ArtStyle => ({ "--auth-in": `${e.delay}ms` });
+
+/** A conduit's travelling pulse — its own period, its own phase. */
+const signalVars = (s: Signal): ArtStyle => ({
+  "--auth-sig-dur": `${s.dur}s`,
+  "--auth-sig-delay": `${s.delay}s`,
+});
+
+/**
+ * The hard 2D shadow's ink and strength. Resolved by the stylesheet on the
+ * stage, so the offset reads as the same shade the cards and buttons beside it
+ * cast — a dark, unblurred copy, never a glow.
+ */
+const SHADE = "var(--auth-shade)";
+const SHADE_ALPHA = 0.72;
 
 /**
  * Deliberately NOT `--auth-dur`: custom properties inherit, and a name shared
@@ -211,7 +236,11 @@ export default function LoginArtwork() {
   if (!art) return null;
 
   return (
-    <div className="auth-art__stage" ref={stageRef}>
+    // `data-theme="dark"` in BOTH page themes: the panel is a fixed dark field,
+    // so the marks need the light-on-dark twins of the brand hues. Under the
+    // light theme `--color-primary` is the panel's own navy and every mark in
+    // it vanished. tds-shared ≥ 0.45.2 resolves the dark tokens for a subtree.
+    <div className="auth-art__stage" ref={stageRef} data-theme="dark">
       <svg
         className="auth-art__canvas"
         viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
@@ -229,18 +258,17 @@ export default function LoginArtwork() {
               key={i}
               id={`auth-art-blur-${i}`}
               // USER SPACE, not the default objectBoundingBox. A percentage region
-              // is a fraction of the path's GEOMETRIC bbox — strokes excluded — and
-              // a nearly flat ribbon has almost no bbox height while its stroke is
-              // up to 24 wide. At these radii that clips the blur into a hard,
-              // straight cut-off across the panel.
+              // is a fraction of the shape's GEOMETRIC bbox (strokes excluded), and
+              // a field sitting on the edge would be clipped into a hard, straight
+              // cut-off at these radii.
               //
               // These numbers are viewBox units, and the margin is not cosmetic: the
               // region clips the filter's INPUT as well as its output, so a pixel
               // just inside the visible crop must still be able to reach every
-              // source pixel within ~3σ (51 units at the widest blur). Spanning
-              // marks run OVERHANG=45 past each edge plus half a 24-wide stroke, so
-              // a 70-unit margin is what keeps the left- and right-most visible
-              // columns from quietly losing part of their colour.
+              // source pixel within ~3σ (51 units at the widest blur). A field is
+              // centred up to 12 units outside the frame with a radius up to 36,
+              // so a 70-unit margin keeps the outermost visible columns from
+              // quietly losing part of their colour.
               filterUnits="userSpaceOnUse"
               x={-70}
               y={-70}
@@ -268,28 +296,60 @@ export default function LoginArtwork() {
                 coordinate, and it varies the read of an otherwise similar layout. */}
             <g transform={`rotate(${art.tilt} ${VIEWBOX / 2} ${VIEWBOX / 2})`}>
               {/* Already in paint order: wash → structure → accent. */}
-              {art.marks.map((mark, i) => (
-                // Three nested elements, one job each: the outer holds the hover
-                // pose (a transition), the inner the ambient motion (an
-                // animation), and the filtered node never moves at all. Both
-                // halves are load-bearing. An animation beats any other
-                // declaration of the same property, so pose and motion cannot
-                // share an element; and an SVG filter on the very element being
-                // transformed is the case engines are least likely to cache — at
-                // radius 17 that would be a full Gaussian per mark per frame.
+              {art.marks.map((mark, i) => {
+                const motion: ArtStyle = {
+                  ...motionVars(mark.motion),
+                  ...(mark.motion.kind === "pulse" ? pulseVars(mark.motion.dim) : null),
+                };
+                const moving = `auth-art__m auth-art__m--${mark.motion.kind}`;
+                // Nested groups, one job each: the pose (a transition), the
+                // entrance (a one-shot), the motion (an animation), and the drawn
+                // node, which never moves at all. An animation beats any other
+                // declaration of the same property, so none of them can share an
+                // element; and an SVG filter on the very element being
+                // transformed is the case engines are least likely to cache.
                 // Don't "simplify" this by collapsing them.
-                <g key={i} className="auth-art__pose" style={poseVars(mark.pose)}>
-                  <g
-                    className={`auth-art__m auth-art__m--${mark.motion.kind}`}
-                    style={{
-                      ...motionVars(mark.motion),
-                      ...(mark.motion.kind === "pulse" ? pulseVars(mark.motion.dim) : null),
-                    }}
-                  >
-                    {renderMark(mark)}
+                return (
+                  <g key={i} className="auth-art__pose" style={poseVars(mark.pose)}>
+                    <g className={`auth-art__in auth-art__in--${mark.enter.kind}`} style={enterVars(mark.enter)}>
+                      {/* The hard shadow: the same shape, offset down-right by a
+                          STATIC attribute OUTSIDE its motion group. Inside it, a
+                          tile turning a quarter would swing its shadow round to
+                          the top-left; out here the offset stays put while the
+                          shape it copies turns. Same motion values, same phase,
+                          so the two never drift apart. */}
+                      {mark.shade > 0 && (
+                        <g transform={`translate(${mark.shade} ${mark.shade})`}>
+                          <g className={moving} style={motion}>
+                            {renderMark(mark, "shade")}
+                          </g>
+                        </g>
+                      )}
+                      <g
+                        className={mark.shade > 0 ? `${moving} auth-art__raise` : moving}
+                        style={mark.shade > 0 ? { ...motion, "--auth-sh": `${mark.shade}px` } : motion}
+                      >
+                        {renderMark(mark, "face")}
+                        {mark.signal && (
+                          // Invisible at rest (`opacity=0`), so the static
+                          // composition under `reduce` is the conduit alone.
+                          <path
+                            className="auth-art__signal"
+                            style={signalVars(mark.signal)}
+                            d={mark.d}
+                            pathLength={1}
+                            fill="none"
+                            stroke={mark.signal.hue}
+                            strokeWidth={r2(mark.width * 2.2)}
+                            strokeLinecap="round"
+                            opacity={0}
+                          />
+                        )}
+                      </g>
+                    </g>
                   </g>
-                </g>
-              ))}
+                );
+              })}
 
               {/* Keystroke bursts. Rendered always and invisible at rest
                   (`opacity=0`), so a keystroke costs an animation and never a
@@ -310,7 +370,7 @@ export default function LoginArtwork() {
                   r={26}
                   fill="none"
                   stroke={ripple.hue}
-                  strokeWidth={0.5}
+                  strokeWidth={0.6}
                   opacity={0}
                 />
               ))}
@@ -322,38 +382,55 @@ export default function LoginArtwork() {
   );
 }
 
+function r2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /**
- * The drawn node.
+ * The drawn node — the visible face, or its hard shadow.
  *
- * Its alpha rides on `stroke-opacity`/`fill-opacity` rather than on `opacity`,
- * and it is a presentation ATTRIBUTE: that is the lowest-priority way to set a
- * value in SVG, so the hover rules can raise it while the composition still
+ * The face's alpha rides on `stroke-opacity`/`fill-opacity` rather than on
+ * `opacity`, and it is a presentation ATTRIBUTE: the lowest-priority way to set
+ * a value in SVG, so the hover rules can raise it while the composition still
  * renders correctly with no stylesheet at all (which is what someone under
  * `prefers-reduced-motion: reduce` gets).
  *
- * The layer class is what the interaction rules key off. Each layer answers
- * differently on purpose: accents scale, structure firms up (weight + alpha),
- * and the wash answers with movement ONLY — lifting the wash's alpha under
- * `screen` is what turns the dark half of the split into a pink wash.
+ * The layer class is what the interaction rules key off: accents scale, hairline
+ * structure (`--line`) firms up, raised tiles lift off their shadow, and the
+ * wash answers with movement only.
+ *
+ * `pathLength="1"` only where a drawn entrance or a signal needs it: it rescales
+ * the dash pattern and nothing else.
  */
-function renderMark(mark: Mark) {
-  const filter = mark.blur >= 0 ? `url(#auth-art-blur-${mark.blur})` : undefined;
-  const className = `auth-art__mark auth-art__mark--${mark.layer}`;
+function renderMark(mark: Mark, role: "face" | "shade") {
+  const face = role === "face";
+  const filter = face && mark.blur >= 0 ? `url(#auth-art-blur-${mark.blur})` : undefined;
+  const line = !mark.filled && mark.width < 1;
+  const className = face
+    ? `auth-art__mark auth-art__mark--${mark.layer}${line ? " auth-art__mark--line" : ""}`
+    : "auth-art__shade";
+  const hue = face ? mark.hue : SHADE;
+  const alpha = face ? mark.opacity : SHADE_ALPHA;
+  // The resting width, so the hover rule can scale it by a factor instead of
+  // naming an absolute one — a fixed target would SHRINK half the hairlines.
+  const width = line && face ? ({ "--auth-w": `${mark.width}` } as ArtStyle) : undefined;
+  const pathLength = mark.measured ? 1 : undefined;
 
   if (mark.kind === "path") {
-    return (
+    return mark.filled ? (
+      <path className={className} d={mark.d} fill={hue} fillOpacity={alpha} filter={filter} />
+    ) : (
       <path
         className={className}
-        // The resting width, so the hover rule can scale it by a factor instead
-        // of naming an absolute one — the marks it applies to are between 0.3
-        // and 0.7 wide, and a fixed target would SHRINK half of them.
-        style={{ "--auth-w": `${mark.width}` } as ArtStyle}
+        style={width}
         d={mark.d}
+        pathLength={pathLength}
         fill="none"
-        stroke={mark.hue}
+        stroke={hue}
         strokeWidth={mark.width}
-        strokeOpacity={mark.opacity}
+        strokeOpacity={alpha}
         strokeLinecap="round"
+        strokeLinejoin="round"
         filter={filter}
       />
     );
@@ -361,29 +438,21 @@ function renderMark(mark: Mark) {
 
   if (mark.filled) {
     return (
-      <circle
-        className={className}
-        cx={mark.cx}
-        cy={mark.cy}
-        r={mark.r}
-        fill={mark.hue}
-        fillOpacity={mark.opacity}
-        filter={filter}
-      />
+      <circle className={className} cx={mark.cx} cy={mark.cy} r={mark.r} fill={hue} fillOpacity={alpha} filter={filter} />
     );
   }
 
   return (
     <circle
       className={className}
-      style={{ "--auth-w": `${mark.width}` } as ArtStyle}
+      style={width}
       cx={mark.cx}
       cy={mark.cy}
       r={mark.r}
       fill="none"
-      stroke={mark.hue}
+      stroke={hue}
       strokeWidth={mark.width}
-      strokeOpacity={mark.opacity}
+      strokeOpacity={alpha}
       filter={filter}
     />
   );

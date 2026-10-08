@@ -80,8 +80,8 @@ describe("rendering", () => {
     expect(stage.querySelectorAll(".auth-art__mark").length).toBeGreaterThan(0);
   });
 
-  it("wraps every mark in a pose group and a motion group", () => {
-    // Three nested elements, one property each. Collapsing them is silent: an
+  it("wraps every mark in a motion group, an entrance group and a pose group", () => {
+    // Nested elements, one property each. Collapsing them is silent: an
     // animation beats the pose transition outright, so the hover response would
     // simply never appear.
     const stage = renderStage();
@@ -89,7 +89,33 @@ describe("rendering", () => {
     for (const mark of stage.querySelectorAll(".auth-art__mark")) {
       const motion = mark.parentElement!;
       expect(motion.getAttribute("class")).toMatch(/auth-art__m--/);
-      expect(motion.parentElement!.getAttribute("class")).toContain("auth-art__pose");
+      const entrance = motion.parentElement!;
+      expect(entrance.getAttribute("class")).toMatch(/auth-art__in--/);
+      expect(entrance.parentElement!.getAttribute("class")).toContain("auth-art__pose");
+    }
+  });
+
+  it("resolves the palette under the dark theme in both page themes", () => {
+    // The panel is a fixed dark field; the light theme's navy marks vanished
+    // into it.
+    expect(renderStage().getAttribute("data-theme")).toBe("dark");
+  });
+
+  it("offsets every hard shadow OUTSIDE its motion group", () => {
+    // Inside it, a tile turning a quarter would swing its shadow round to the
+    // top-left. The shadow moves with the same motion, from a static offset.
+    for (let i = 0; i < 12; i++) {
+      const stage = renderStage();
+      for (const shade of stage.querySelectorAll(".auth-art__shade")) {
+        const motion = shade.parentElement!;
+        expect(motion.getAttribute("class")).toMatch(/auth-art__m--/);
+        expect(motion.parentElement!.getAttribute("transform")).toMatch(/^translate\([\d.]+ [\d.]+\)$/);
+        // …and its face is the raised one the hover lift and typing press move.
+        const face = motion.parentElement!.nextElementSibling!;
+        expect(face.getAttribute("class")).toContain("auth-art__raise");
+        expect(face.getAttribute("style")).toMatch(/--auth-sh:\s*[\d.]+px/);
+      }
+      cleanup();
     }
   });
 

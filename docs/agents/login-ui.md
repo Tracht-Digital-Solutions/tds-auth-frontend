@@ -10,7 +10,7 @@ slim band above the form.
   order.
 - **The artwork panel is a fixed dark field in both themes** (`--color-surface-*`, which don't flip).
   It is the contrast partner to the form half.
-- The panel paints its own CSS gradient, so the frame before the island generates anything is a
+- The panel paints its own flat navy ground, so the frame before the island generates anything is a
   brand surface, not a hole.
 - **The form half carries `.tds-wash`** (tds-shared ≥ 0.23.0). Put it on `.auth-panel`, not
   `.auth-page`; on the page it would run under the artwork half, which owns its ground.

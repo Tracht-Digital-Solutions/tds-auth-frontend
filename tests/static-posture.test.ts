@@ -188,6 +188,8 @@ describe("login chrome", () => {
       "auth-art-slide",
       "auth-art-pulse",
       "auth-art-sway",
+      "auth-art-turn",
+      "auth-art-signal",
     ]) {
       expect(noPreferenceBlock, `${name} must sit inside the opt-in block`).toContain(name);
     }
@@ -249,6 +251,11 @@ describe("login chrome", () => {
     for (const rule of [
       ".auth-art__pose",
       ".auth-art__mark--accent",
+      ".auth-art__mark--line",
+      ".auth-art__raise",
+      ".auth-art__in--pop",
+      ".auth-art__in--draw",
+      ".auth-art__signal",
       ".auth-art__breathe",
       ".auth-art__ripple",
       ".auth-art__stage:hover",
@@ -280,7 +287,12 @@ describe("login chrome", () => {
     // groups makes the pose silently never appear.
     expect(ruleBody(".auth-art__pose")).toMatch(/transition:\s*transform/);
     expect(ruleBody(".auth-art__pose")).not.toMatch(/animation:/);
-    expect(artwork).toMatch(/className="auth-art__pose"[\s\S]{0,300}auth-art__m--/);
+    // pose → entrance → motion, in that order of nesting.
+    const pose = artwork.indexOf('className="auth-art__pose"');
+    const entrance = artwork.indexOf("auth-art__in auth-art__in--");
+    expect(pose).toBeGreaterThan(0);
+    expect(entrance).toBeGreaterThan(pose);
+    expect(artwork.indexOf("className={moving}", entrance)).toBeGreaterThan(entrance);
   });
 
   it("keeps each mark's alpha overridable by the hover rules", () => {
@@ -289,15 +301,27 @@ describe("login chrome", () => {
     // structure's hover brightening would be silently ignored. The pulse
     // keyframes therefore rest at 1 and multiply, rather than naming an
     // absolute opacity.
-    expect(artwork).toMatch(/strokeOpacity=\{mark\.opacity\}/);
-    expect(artwork).toMatch(/fillOpacity=\{mark\.opacity\}/);
+    expect(artwork).toMatch(/const alpha = face \? mark\.opacity : SHADE_ALPHA;/);
+    expect(artwork).toMatch(/strokeOpacity=\{alpha\}/);
+    expect(artwork).toMatch(/fillOpacity=\{alpha\}/);
     expect(globalCss).toMatch(/@keyframes auth-art-pulse\s*\{\s*0%,\s*100%\s*\{\s*opacity:\s*1;/);
   });
 
-  it("keeps the screen blend the composition is built on", () => {
-    // Overlapping ribbons read as light rather than as stacked paint only under
-    // `screen`; without it the panel goes muddy and the palette stops working.
-    expect(globalCss).toMatch(/mix-blend-mode:\s*screen/);
+  it("paints the composition flat, without a blend mode", () => {
+    // The hard shadows are DARK copies of their shapes, and screening with a
+    // dark colour is a no-op: under the old `screen` blend every shadow would
+    // silently vanish, and the panel would be back to the aurora look.
+    expect(code(globalCss)).not.toMatch(/mix-blend-mode/);
+    expect(ruleBody(".auth-art__stage")).toMatch(/--auth-shade:/);
+  });
+
+  it("keeps the shadow offset static and the lift on its own property", () => {
+    // The offset is an SVG attribute OUTSIDE the motion group, so a turning tile
+    // keeps its shadow down-right; the lift/press is `translate`, which composes
+    // outside the `transform` the same group is animating.
+    expect(artwork).toMatch(/<g transform=\{`translate\(\$\{mark\.shade\} \$\{mark\.shade\}\)`\}>/);
+    expect(ruleBody(".auth-art__raise")).toMatch(/^\s*translate:/m);
+    expect(ruleBody(".auth-art__raise")).not.toMatch(/(^|[^-])transform:/m);
   });
 
   it("takes the theme bootstrap from tds-shared, not from a copy", () => {

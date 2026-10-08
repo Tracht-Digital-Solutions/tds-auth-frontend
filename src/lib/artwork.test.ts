@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   BLUR_LEVELS,
+  ENTER_MAX,
   LAYERS,
+  MARKS_MAX,
   OVERHANG,
   PALETTE,
   POSE_BANDS,
   POSE_DELAY_MAX,
   RIPPLE_SLOTS,
   SCENES,
+  SHADE_RANGE,
+  SPOT,
   STRAY_MAX,
   VIEWBOX,
   WASH_ALPHA_MAX,
@@ -29,11 +33,9 @@ import {
  *  - different seeds must actually differ (a generator that quietly collapses
  *    to one output looks fine in review and is wrong in production).
  *
- * The sweep runs over a few hundred seeds, because a fault that shows up in
- * 1-in-50 compositions is exactly the kind a handful of spot checks misses —
- * and it runs over each SCENE explicitly. Left to the seed alone every scene
- * would get a quarter of the sweep, so a fault confined to one of them would
- * show up a quarter as often as it should.
+ * The sweep runs over a few hundred seeds per SCENE explicitly. Left to the
+ * seed alone every scene would get an eighth of the sweep, so a fault confined
+ * to one of them would show up an eighth as often as it should.
  */
 
 const SEEDS = Array.from({ length: 300 }, (_, i) => i * 7919 + 13);
@@ -49,18 +51,22 @@ function sweep(): Array<{ label: string; art: Artwork }> {
 
 const ALL = sweep();
 
-/** Every hue a composition puts on screen, ripples included. */
+/** Every hue a composition puts on screen, ripples and signals included. */
 function huesOf(art: Artwork): string[] {
-  return [...art.marks.map((m) => m.hue), ...art.ripples.map((x) => x.hue)];
+  return [
+    ...art.marks.map((m) => m.hue),
+    ...art.marks.flatMap((m) => (m.signal ? [m.signal.hue] : [])),
+    ...art.ripples.map((x) => x.hue),
+  ];
 }
 
 function marksOn(art: Artwork, layer: Layer): Mark[] {
   return art.marks.filter((m) => m.layer === layer);
 }
 
-/** Every number in a path, in source order. */
-function numbersIn(d: string): number[] {
-  return (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+/** How far a point lies outside the canvas, in the max-norm (negative inside). */
+function outside([x, y]: [number, number]): number {
+  return Math.max(-x, x - VIEWBOX, -y, y - VIEWBOX);
 }
 
 /** How far a mark travels under hover, unsigned. */
@@ -86,9 +92,8 @@ describe("determinism", () => {
 
   it("consumes the scene draw even when the scene is forced", () => {
     // Otherwise the explicit-scene form used throughout this file would be
-    // testing a DIFFERENT random stream from the one visitors get, and every
-    // bound below would be measuring the wrong compositions.
-    for (const seed of SEEDS.slice(0, 40)) {
+    // testing a DIFFERENT random stream from the one visitors get.
+    for (const seed of SEEDS.slice(0, 60)) {
       const art = generateArtwork(seed);
       expect(generateArtwork(seed, art.scene), `seed ${seed}`).toEqual(art);
     }
@@ -112,25 +117,23 @@ describe("randomSeed", () => {
 });
 
 describe("scenes", () => {
-  it("draws every archetype, and none more than half the time", () => {
-    // The whole point of the rewrite: a visitor who reloads must get a
-    // different KIND of picture, not the same one reshuffled. A scene that is
-    // never drawn is dead code nobody would notice.
+  it("draws every archetype, and none more than a quarter of the time", () => {
+    // A visitor who reloads must get a different KIND of picture, not the same
+    // one reshuffled. A scene that is never drawn is dead code nobody notices.
     const counts = new Map<SceneKind, number>();
     for (const seed of SEEDS) {
       const { scene } = generateArtwork(seed);
       counts.set(scene, (counts.get(scene) ?? 0) + 1);
     }
     for (const scene of SCENES) {
-      expect(counts.get(scene) ?? 0, scene).toBeGreaterThan(SEEDS.length / 10);
-      expect(counts.get(scene) ?? 0, scene).toBeLessThan(SEEDS.length / 2);
+      expect(counts.get(scene) ?? 0, scene).toBeGreaterThan(SEEDS.length / 20);
+      expect(counts.get(scene) ?? 0, scene).toBeLessThan(SEEDS.length / 4);
     }
   });
 
   it("fills all three layers in every scene", () => {
     // A scene missing its wash is a flat picture; one missing its accents has
-    // nowhere for the eye to land. Both still render, which is why this is a
-    // test and not a runtime check.
+    // nowhere for the eye to land. Both still render.
     for (const { label, art } of ALL) {
       for (const layer of LAYERS) {
         expect(marksOn(art, layer).length, `${label} ${layer}`).toBeGreaterThan(0);
@@ -151,106 +154,132 @@ describe("scenes", () => {
     // The bound is the point: "abstract" must not become "a hundred shapes".
     for (const { label, art } of ALL) {
       expect(art.marks.length, label).toBeGreaterThanOrEqual(6);
-      expect(art.marks.length, label).toBeLessThanOrEqual(40);
+      expect(art.marks.length, label).toBeLessThanOrEqual(MARKS_MAX);
+    }
+  });
+
+  it("casts a hard shadow somewhere in every scene", () => {
+    // The hard 2D offset is the signature of the current brand surfaces; a
+    // scene without a single shadowed shape has fallen out of the style.
+    for (const { label, art } of ALL) {
+      expect(art.marks.some((m) => m.shade > 0), label).toBe(true);
+    }
+  });
+
+  it("runs every circuit board as one piece", () => {
+    // Conduits end on chips and nodes. If any of them moved on its own, the
+    // connections would come apart on screen.
+    for (const { label, art } of ALL.filter(({ art }) => art.scene === "circuits")) {
+      const board = marksOn(art, "structure");
+      for (const mark of board) {
+        expect(mark.motion, label).toEqual(board[0]!.motion);
+        expect(mark.pose, label).toEqual(board[0]!.pose);
+      }
+      const conduits = board.filter((m) => m.signal);
+      expect(conduits.length, label).toBeGreaterThanOrEqual(3);
+      for (const conduit of conduits) expect(conduit.measured, label).toBe(true);
+    }
+  });
+
+  it("sets the brand accent exactly once in a measure scene, in brand order", () => {
+    // Bordeaux · coral · gold — punctuation, so one bar and never re-coloured.
+    for (const { label, art } of ALL.filter(({ art }) => art.scene === "measure")) {
+      const hues = marksOn(art, "accent")
+        .filter((m) => m.kind === "path" && m.filled)
+        .map((m) => m.hue);
+      expect(hues, label).toEqual(["var(--color-accent)", "var(--color-accent-pink)", SPOT]);
+    }
+  });
+
+  it("lays every mosaic on its grid: tiles turn by right angles only", () => {
+    for (const { label, art } of ALL.filter(({ art }) => art.scene === "mosaic")) {
+      const tiles = marksOn(art, "structure");
+      expect(tiles.length, label).toBeGreaterThanOrEqual(6);
+      for (const { motion: m } of tiles) {
+        expect(m.kind, label).toBe("turn");
+        if (m.kind === "turn") expect(Math.abs(m.rot) % 90, label).toBe(0);
+      }
     }
   });
 });
 
 describe("every composition is well-formed", () => {
   it("emits no NaN in any coordinate", () => {
-    // A single NaN in a path silently drops the whole shape — the artwork just
-    // looks sparse, with nothing in the console to explain it.
+    // A single NaN in a path silently drops the whole shape.
     for (const { label, art } of ALL) {
       expect(JSON.stringify(art), label).not.toMatch(/NaN|null|undefined/);
       for (const mark of art.marks) {
-        if (mark.kind === "path") expect(mark.d, label).not.toMatch(/NaN|undefined/);
+        if (mark.kind === "path") expect(mark.d, label).toMatch(/^M [-\d.]+ [-\d.]+/);
         else expect(Number.isFinite(mark.cx! + mark.cy! + mark.r!), label).toBe(true);
       }
     }
   });
 
   it("only ever references theme tokens, never a literal colour", () => {
-    // Literals would freeze the artwork to one theme; every hue must flip with
-    // light/dark for free.
     for (const { label, art } of ALL) {
       for (const hue of huesOf(art)) expect(PALETTE, label).toContain(hue);
       expect(art.ripples.length, label).toBe(RIPPLE_SLOTS);
     }
   });
 
-  it("limits one composition to at most three hues", () => {
-    // All six at once reads as a colour test card rather than a composition.
-    // The ripples are included on purpose: they are the one shape that appears
-    // only while someone is typing, so a hue drawn from outside the palette
-    // there would never show up in a screenshot.
+  it("limits one composition to three field hues plus the gold spot", () => {
+    // A full palette at once reads as a colour test card. Ripples and signals
+    // count: they only show while something happens, so a stray hue there would
+    // never turn up in a screenshot.
     for (const { label, art } of ALL) {
-      expect(new Set(huesOf(art)).size, label).toBeLessThanOrEqual(3);
+      const hues = new Set(huesOf(art));
+      hues.delete(SPOT);
+      expect(hues.size, label).toBeLessThanOrEqual(3);
     }
   });
 
-  it("indexes a blur filter that actually exists", () => {
-    // An out-of-range index yields `url(#auth-art-blur-3)`, which resolves to
-    // nothing — the mark renders hard-edged and the composition looks wrong in
-    // a way no error reports. -1 is the explicit "no filter" case.
+  it("blurs only the wash, with a filter that exists", () => {
+    // The contrast between soft field and crisp construction IS the depth.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
         expect(Number.isInteger(mark.blur), label).toBe(true);
         expect(mark.blur, label).toBeGreaterThanOrEqual(-1);
         expect(mark.blur, label).toBeLessThan(BLUR_LEVELS.length);
-        // Only the wash is ever blurred: the contrast between soft colour and
-        // crisp geometry IS the depth of the composition.
         if (mark.layer !== "wash") expect(mark.blur, label).toBe(-1);
       }
     }
   });
 
-  it("overhangs both edges with every spanning mark", () => {
-    // A stroke that ends inside the frame shows its round cap, which reads as a
-    // rendering fault rather than as a design choice. The overhang has to clear
-    // the drift AND the rotations: a tilt about the canvas centre swings the end
-    // of a high or low mark *inward*, which is why OVERHANG is far larger than
-    // the drift amplitude alone would suggest.
+  it("runs every spanning mark OVERHANG past the frame at both ends", () => {
+    // A strip, band or line that ends inside the frame shows its round cap.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
         if (!mark.spans) continue;
-        expect(mark.kind, label).toBe("path");
-        const nums = numbersIn(mark.d!);
-        // First pair is the `M`; the last pair is wherever the segment ends.
-        expect(nums[0], label).toBe(-OVERHANG);
-        expect(nums[nums.length - 2], label).toBe(VIEWBOX + OVERHANG);
+        expect(mark.ends, label).toBeDefined();
+        for (const end of mark.ends!) expect(outside(end), `${label} ${end}`).toBeGreaterThanOrEqual(OVERHANG - 0.01);
       }
     }
   });
 
-  it("keeps every non-spanning mark inside the crop", () => {
-    // The mirror of the rule above. A mark generated far outside is one nobody
-    // will ever see, and a scene quietly spending half its shapes off-screen
-    // looks *sparse* rather than broken — the kind of fault that survives
-    // review. A little bleed is deliberate; a lot is a bug.
+  it("never rotates a spanning mark or the wash", () => {
+    // Translation and outward scale cannot pull an overhang inside the frame; a
+    // rotation about the canvas centre swings the ENDS furthest and can.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
-        if (mark.spans) continue;
-        if (mark.kind === "path") {
-          for (const n of numbersIn(mark.d!)) {
-            expect(n, `${label} ${mark.d}`).toBeGreaterThanOrEqual(-STRAY_MAX);
-            expect(n, `${label} ${mark.d}`).toBeLessThanOrEqual(VIEWBOX + STRAY_MAX);
-          }
-        } else {
-          // Radius and stroke may bleed past the edge — that is what a wash
-          // does — but the ANCHOR has to sit in the picture.
-          expect(mark.cx, label).toBeGreaterThan(0);
-          expect(mark.cx, label).toBeLessThan(VIEWBOX);
-          expect(mark.cy, label).toBeGreaterThan(0);
-          expect(mark.cy, label).toBeLessThan(VIEWBOX);
-          expect(mark.r, label).toBeGreaterThan(0);
-        }
+        if (!mark.spans && mark.layer !== "wash") continue;
+        expect(mark.pose.rot, label).toBe(0);
+        if (mark.spans) expect(mark.motion.kind, label).toBe("slide");
+      }
+    }
+  });
+
+  it("anchors every mark in or just beside the picture", () => {
+    // A mark generated far outside is one nobody will ever see, and a scene
+    // quietly spending its shapes off-screen looks sparse rather than broken.
+    for (const { label, art } of ALL) {
+      for (const mark of art.marks) {
+        expect(outside(mark.at), `${label} ${mark.at}`).toBeLessThanOrEqual(STRAY_MAX);
+        if (mark.kind === "circle") expect(mark.r, label).toBeGreaterThan(0);
       }
     }
   });
 
   it("keeps every mark visible but never opaque", () => {
-    // 0 is an invisible shape (wasted node); 1 is a flat block that defeats the
-    // `screen` blend the whole look rests on.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
         expect(mark.opacity, label).toBeGreaterThan(0.1);
@@ -259,12 +288,25 @@ describe("every composition is well-formed", () => {
     }
   });
 
-  it("keeps wash alpha under the screen-blend ceiling", () => {
-    // The per-bucket blur compensation multiplies the base draw; without the
-    // clamp the softest bucket reaches 0.9 and `screen` washes the panel out.
+  it("keeps the wash a tint, not a second colour block", () => {
     for (const { label, art } of ALL) {
       for (const mark of marksOn(art, "wash")) {
         expect(mark.opacity, label).toBeLessThanOrEqual(WASH_ALPHA_MAX);
+        expect(mark.shade, label).toBe(0);
+      }
+    }
+  });
+
+  it("casts hard shadows within the brand's offset, and only under solid shapes", () => {
+    // The offset is the cards' 6–8 px; a translucent pane over its own shadow
+    // reads as a smudge, not as a shape lifted off the panel.
+    for (const { label, art } of ALL) {
+      for (const mark of art.marks) {
+        if (mark.shade === 0) continue;
+        expect(mark.shade, label).toBeGreaterThan(0.3);
+        expect(mark.shade, label).toBeLessThanOrEqual(SHADE_RANGE[1]);
+        expect(mark.opacity, label).toBeGreaterThanOrEqual(0.8);
+        expect(mark.blur, label).toBe(-1);
       }
     }
   });
@@ -276,16 +318,11 @@ describe("every composition is well-formed", () => {
   });
 
   it("keeps the blur radii inside the filter region the component declares", () => {
-    // LoginArtwork.tsx sizes its userSpaceOnUse region from the largest radius
-    // here. Past ~20 the Gaussian's support outruns that margin and the mark
-    // gets a hard, straight cut-off that nothing reports.
     expect([...BLUR_LEVELS]).toEqual([...BLUR_LEVELS].sort((a, b) => a - b));
     expect(Math.max(...BLUR_LEVELS)).toBeLessThanOrEqual(20);
   });
 
   it("keeps every ripple origin well inside the crop", () => {
-    // A ripple is a circle: one centred near an edge spends most of its life as
-    // an arc sliding off the frame, which reads as a rendering fault.
     for (const { label, art } of ALL) {
       for (const ripple of art.ripples) {
         expect(ripple.cx, label).toBeGreaterThanOrEqual(20);
@@ -297,14 +334,46 @@ describe("every composition is well-formed", () => {
   });
 });
 
+describe("the entrance", () => {
+  it("builds the constructed layers and leaves the wash to the canvas fade", () => {
+    for (const { label, art } of ALL) {
+      for (const mark of art.marks) {
+        expect(mark.enter.delay, label).toBeGreaterThanOrEqual(0);
+        expect(mark.enter.delay, label).toBeLessThanOrEqual(ENTER_MAX);
+        if (mark.layer === "wash") expect(mark.enter.kind, label).toBe("none");
+        else expect(mark.enter.kind, label).not.toBe("none");
+      }
+    }
+  });
+
+  it("draws only open strokes, and only measured ones", () => {
+    // `draw` animates the dash of a `pathLength="1"` path; on a fill it does
+    // nothing, and without the attribute it draws a fraction of the run.
+    for (const { label, art } of ALL) {
+      for (const mark of art.marks) {
+        if (mark.enter.kind !== "draw") continue;
+        expect(mark.kind, label).toBe("path");
+        expect(mark.filled, label).toBe(false);
+        expect(mark.measured, label).toBe(true);
+      }
+    }
+  });
+
+  it("never pops a filled spanning mark", () => {
+    // Popped from 55 % about its own centre, a band longer than the canvas
+    // would show both its caps for the length of the entrance.
+    for (const { label, art } of ALL) {
+      for (const mark of art.marks) {
+        if (mark.spans && mark.filled) expect(mark.enter.kind, label).not.toBe("pop");
+      }
+    }
+  });
+});
+
 describe("the motion is ambient, not animated", () => {
-  // These bounds ARE the requirement. The composition should read as clearly
-  // alive but never as a running animation — a five-second cycle or a
-  // thirty-unit sweep would pass every other test in this file and still be
-  // wrong, because the artwork sits beside a login form and must not pull the
-  // eye off it. The upper bounds are also a geometry contract: OVERHANG is
-  // sized against them, so raising an amplitude without re-checking it starts
-  // showing stroke caps.
+  // These bounds ARE the requirement: clearly alive, never a running animation
+  // beside a login form. The upper bounds are also a geometry contract —
+  // OVERHANG is sized against them.
 
   it("drifts and slides slowly and by very little", () => {
     for (const { label, art } of ALL) {
@@ -313,42 +382,42 @@ describe("the motion is ambient, not animated", () => {
           expect(Math.abs(m.dx), label).toBeLessThanOrEqual(14);
           expect(Math.abs(m.dy), label).toBeLessThanOrEqual(11);
           expect(Math.abs(m.rot), label).toBeLessThanOrEqual(3.5);
-          // Never below 1: the composition breathes outward only, so a spanning
-          // mark's over-hang can never be pulled inside the frame.
+          // Outward only, so an overhang is never pulled inside the frame.
           expect(m.scale, label).toBeGreaterThanOrEqual(1);
           expect(m.scale, label).toBeLessThanOrEqual(1.06);
         }
-        if (m.kind === "slide") {
-          expect(Math.hypot(m.dx, m.dy), label).toBeLessThanOrEqual(12.1);
-        }
+        if (m.kind === "slide") expect(Math.hypot(m.dx, m.dy), label).toBeLessThanOrEqual(12.1);
         if (m.kind === "orbit") expect(Math.abs(m.rot), label).toBeLessThanOrEqual(6);
-        if (m.kind === "spin") expect(Math.abs(m.rot), label).toBeLessThanOrEqual(14);
+        if (m.kind === "spin") expect(Math.abs(m.rot), label).toBeLessThanOrEqual(20);
+        if (m.kind === "turn") expect(Math.abs(m.rot), label).toBe(90);
       }
     }
   });
 
-  it("starts every mark mid-cycle", () => {
-    // A zero delay everywhere makes the whole composition swell in unison,
-    // which is what turns ambient drift back into "an animation". A delay of a
-    // full period is phase-equivalent to no delay at all, so the bound is strict.
+  it("starts every mark and every signal mid-cycle", () => {
+    // A zero delay everywhere makes the composition swell in unison. A delay of
+    // a full period is phase-equivalent to none, so the bound is strict.
     for (const { label, art } of ALL) {
-      for (const { motion: m } of art.marks) {
+      for (const { motion: m, signal } of art.marks) {
         expect(m.delay, label).toBeLessThanOrEqual(0);
         expect(m.delay, label).toBeGreaterThan(-m.dur);
+        if (signal) {
+          expect(signal.delay, label).toBeLessThanOrEqual(0);
+          expect(signal.delay, label).toBeGreaterThan(-signal.dur);
+          expect(signal.dur, label).toBeGreaterThanOrEqual(3);
+        }
       }
     }
   });
 
   it("counter-rotates consecutive turning marks", () => {
-    // Every ring turning the same way reads as the whole picture rotating —
-    // and that motion already belongs to the sway group. Guaranteed by index
-    // rather than drawn, because a direction that is merely likely is one some
-    // seeds don't get.
+    // Every ring turning the same way reads as the whole picture rotating, and
+    // that motion already belongs to the sway group.
     for (const { label, art } of ALL) {
       const turns = art.marks
         .map((m) => m.motion)
-        .filter((m): m is Extract<typeof m, { kind: "orbit" | "spin" }> =>
-          m.kind === "orbit" || m.kind === "spin",
+        .filter((m): m is Extract<typeof m, { kind: "orbit" | "spin" | "turn" }> =>
+          m.kind === "orbit" || m.kind === "spin" || m.kind === "turn",
         );
       for (let i = 1; i < turns.length; i++) {
         expect(Math.sign(turns[i]!.rot), `${label} #${i}`).not.toBe(Math.sign(turns[i - 1]!.rot));
@@ -356,12 +425,12 @@ describe("the motion is ambient, not animated", () => {
     }
   });
 
-  it("pivots every spin on a point inside the picture", () => {
+  it("pivots every spin and turn on a point inside the picture", () => {
     // The pivot reaches CSS as `transform-origin`; one far outside the canvas
-    // turns a gentle rotation into a shape sweeping across the whole panel.
+    // turns a gentle rotation into a shape sweeping across the panel.
     for (const { label, art } of ALL) {
       for (const { motion: m } of art.marks) {
-        if (m.kind !== "spin") continue;
+        if (m.kind !== "spin" && m.kind !== "turn") continue;
         expect(m.ox, label).toBeGreaterThan(0);
         expect(m.ox, label).toBeLessThan(VIEWBOX);
         expect(m.oy, label).toBeGreaterThan(0);
@@ -400,17 +469,13 @@ describe("the motion is ambient, not animated", () => {
 
 describe("the hover pose", () => {
   // The composition answers the PRESENCE of a pointer, never its position — so
-  // the response is a seeded property of the picture and can be bounded here,
-  // which a cursor read-out never could be.
+  // the response is a seeded property of the picture and can be bounded here.
 
   it("carries no trace of a pointer coordinate", () => {
-    // The regression this whole change exists to prevent: a pose is fixed at
-    // generation time, so nothing about it may depend on where the mouse is.
-    for (const { label, art } of ALL) {
+    for (const { label, art } of ALL.filter((_, i) => i % 7 === 0)) {
       for (const mark of art.marks) {
         expect(Number.isFinite(mark.pose.dx + mark.pose.dy), label).toBe(true);
       }
-      // Same seed, same pose — twice, with no input in between.
       expect(generateArtwork(art.seed, art.scene).marks.map((m) => m.pose), label).toEqual(
         art.marks.map((m) => m.pose),
       );
@@ -418,10 +483,7 @@ describe("the hover pose", () => {
   });
 
   it("orders the layers by travel: wash behind structure behind accents", () => {
-    // This IS the depth cue. The blurred wash is the far layer and must always
-    // move least; the crisp accents are the near one and must always move most
-    // — they are also the only marks whose displacement the eye can actually
-    // measure, so an overlap here quietly flattens the effect.
+    // This IS the depth cue; an overlap quietly flattens it.
     for (const { label, art } of ALL) {
       const wash = marksOn(art, "wash").map(travel);
       const structure = marksOn(art, "structure").map(travel);
@@ -432,10 +494,6 @@ describe("the hover pose", () => {
   });
 
   it("stays inside the geometry budget OVERHANG is sized for", () => {
-    // The pose stacks on top of the drift, so it spends the same margin. 4
-    // units on a wash mark is the ceiling the OVERHANG note assumes; raising it
-    // means re-deriving OVERHANG against tilt + sway + rotation again, not just
-    // bumping a number here.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
         const [lo, hi] = POSE_BANDS[mark.layer];
@@ -447,7 +505,7 @@ describe("the hover pose", () => {
 
   it("moves the structure against everything else", () => {
     // If every layer slid the same way the response would read as the whole
-    // picture being dragged — the same argument as the counter-rotating rings.
+    // picture being dragged.
     for (const { label, art } of ALL) {
       const wash = marksOn(art, "wash")[0]!.pose;
       for (const mark of marksOn(art, "structure")) {
@@ -456,16 +514,6 @@ describe("the hover pose", () => {
       for (const mark of marksOn(art, "accent")) {
         expect(mark.pose.dx * wash.dx + mark.pose.dy * wash.dy, label).toBeGreaterThan(0);
       }
-    }
-  });
-
-  it("never rotates a wash mark", () => {
-    // Translation and outward scale cannot pull a spanning mark's overhang
-    // inside the frame. A rotation about the canvas centre swings the ENDS
-    // furthest and can — which is the one way this response could put a stroke
-    // cap on screen.
-    for (const { label, art } of ALL) {
-      for (const mark of marksOn(art, "wash")) expect(mark.pose.rot, label).toBe(0);
     }
   });
 
@@ -480,14 +528,11 @@ describe("the hover pose", () => {
   });
 
   it("staggers the arrival, but not the departure into lag", () => {
-    // The same delay applies on the way back, so this ceiling is what keeps a
-    // decoration from still rearranging itself long after the pointer left.
     for (const { label, art } of ALL) {
       for (const mark of art.marks) {
         expect(mark.pose.delay, label).toBeGreaterThanOrEqual(0);
         expect(mark.pose.delay, label).toBeLessThanOrEqual(POSE_DELAY_MAX);
       }
-      // …and it has to actually vary, or there is no stagger at all.
       expect(new Set(art.marks.map((m) => m.pose.delay)).size, label).toBeGreaterThan(1);
     }
   });

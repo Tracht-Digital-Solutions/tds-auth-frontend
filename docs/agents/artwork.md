@@ -9,109 +9,119 @@ Nothing renders server-side. A static build would show every visitor the same pi
 next deploy, and seeding it in the initial render would make server and client markup disagree on
 every load. Generating in an effect is the only fresh and correct option.
 
+## Style: "Digitale Maßarbeit", not an aurora
+
+The vocabulary is tds-shared's decoration layer: **constructed geometry** (capsules, quarter and half
+circles, strongly rounded rectangles) cut by the frame, `.tds-circuit`-style conduits with rounded 90°
+corners and nodes, the bordeaux · coral · gold brand accent, and the **hard, unblurred 2D shadow**
+the cards and buttons carry. The blurred ribbons under `screen` it replaced are gone; don't bring
+back a blend mode (a dark shadow under `screen` vanishes).
+
+- **The stage carries `data-theme="dark"` in both page themes.** The panel is a fixed dark field;
+  under the light theme `--color-primary` is the panel's own navy and every mark vanished.
+  tds-shared ≥ 0.45.2 resolves dark tokens for a subtree (incl. `--color-gold`).
+- **The panel ground is flat `--color-surface-navy`.** Depth comes from the shadows.
+- Colours are `var(--color-*)`, never literals. Two or three field hues per composition, plus gold
+  (`SPOT`) for nodes, ticks and the accent only. The `measure` scene builds its hues around the brand
+  accent instead of adding to them.
+
 ## Scenes and layers
 
-Variety comes from a **scene** drawn per visit. Four archetypes (`SCENES`), each with its own shape
-and motion vocabulary:
+Eight archetypes (`SCENES`), drawn per visit, each filling the same three layers:
 
-| Scene | Wash (soft, back) | Structure (crisp, middle) | Accent (crisp, front) |
+| Scene | Wash (back) | Structure (middle) | Accent (front) |
 |---|---|---|---|
-| `ribbons` | 4–7 curved bands, `drift` | 2–4 rings, `orbit` | 2–4 dots, `pulse` |
-| `orbits` | 2 wide blurred haloes, `drift` | 5–9 arc segments about 1–2 foci, `spin` | 3–5 dots, `pulse` |
-| `particles` | 2–3 blurred blobs, `drift` | 1–2 rings, `orbit` | 16–28 dots + hairlines, `pulse` |
-| `strata` | 6–10 parallel bands, `slide` | 3–5 cross-ticks, `slide` | 2–4 dots, `pulse` |
+| `constructs` | field, 1–2 cut slabs, maybe a great capsule | 3–5 shadowed tiles on a loose grid, diagonal, ring | dots |
+| `circuits` | field, slab | conduits from the edge into chips/nodes, **signals** travelling along them | pads |
+| `orbits` | 1–2 fields, slab | shadowed core per focus, 5–9 arcs (`spin`) | gold nodes riding the orbits |
+| `strata` | field, slab | 5–8 parallel capsule bands (≥ 1 solid + shadowed), cross-ticks | dots |
+| `raster` | field, slab, capsule | dot matrix with a **pulse wave**, tiles, ring | lit gold dots |
+| `mosaic` | field, slab | 6–20 shadowed tiles that **turn by quarter steps** | dots |
+| `ribbons` | 1–2 fields | 3–5 flat paper strips with shadows, rings | dots |
+| `measure` | field, slab | tape-measure rules, logomark diagonal (72°), tiles | crosses, the brand accent |
 
-- **Every scene fills the same three layers.** That contract lets one set of blur filters, one
-  `screen` blend and one depth read serve all four; a fifth scene is a generator change only.
-- **Two render kinds:** a stroked `path` and a `circle` (stroked or filled). `LoginArtwork.tsx` is one
-  loop with no per-scene branching. `Mark.spans` says a mark must leave the frame at both ends;
-  `Mark.layer` drives the interaction rules.
+- **Two render kinds:** `path` (stroked or filled) and `circle`. `LoginArtwork.tsx` is one loop with no
+  per-scene branching. Shapes are built in local coordinates and placed by baking one rotation into
+  the path points, never a `transform` attribute (accent CSS would override it).
+- **Pieces that belong together share one motion object and one pose:** the circuit board (conduits,
+  chips, terminal nodes), the raster grid and mosaic floor (pose staggered along the wave), the brand
+  bar. Otherwise connections come apart on screen. Chips and nodes are painted after the conduits.
 
 ## Bounded, seeded, pure
 
-- Counts, curvature, thickness, opacity and palette are clamped; only the arrangement varies. One
-  composition uses **two or three** hues, never all six.
-- Seeded and pure, so a composition is reproducible from its number. `generateArtwork(seed, scene)`
-  forces the archetype and consumes the scene draw either way.
-- Colours are `var(--color-*)`, never literals, so the artwork follows the theme.
-- `mix-blend-mode: screen` on the SVG is load-bearing: overlapping marks read as light.
+- Counts, sizes, alphas and palette are clamped; only the arrangement varies. `MARKS_MAX` is 64.
+- Seeded and pure. `generateArtwork(seed, scene)` forces the archetype and consumes the scene draw
+  either way. Every draw happens in source order; moving a line reshuffles every composition.
+- **Spanning marks** (strips, bands, rules, diagonals, the great capsule) carry `ends` that sit
+  `OVERHANG` past the frame in the max-norm, from wherever they are centred (`spanHalf`). They only
+  ever `slide`, never rotate, and never `pop` (shrunk about their centre they would show caps).
+- Non-spanning marks carry `at`, within `STRAY_MAX` of the frame (cut slabs anchor just outside a
+  corner).
 
-## Blur and brightness
+## Blur
 
-- **Only the wash is blurred** (`BLUR_LEVELS` 5 / 10 / 17); structure and accents stay sharp for
-  depth. Keep the largest radius **≤ 20**; it sizes the filter region.
-- **A thin mark can't take the widest bucket.** A 3-unit straight band smeared over σ = 17 has no
-  peak left, so `bandMark` never draws bucket 2.
-- **Softer means dimmer, not brighter** (`BLUR_ALPHA`). `screen` accumulates over coverage; at
-  radius 17 one ribbon covers most of the canvas. Judge blur or alpha changes by **mean luminance
-  over several loads**, never one composition.
-- **The filter region is `userSpaceOnUse`.** A percentage region is a fraction of the geometric bbox
-  (strokes excluded) and clips flat ribbons into a hard cut-off. The region also clips the filter's
-  input, so it is sized from `OVERHANG` + half a stroke + 3σ.
+Only the wash fields are blurred (`BLUR_LEVELS` 5 / 10 / 17; keep the largest ≤ 20, it sizes the
+`userSpaceOnUse` filter region). Wash alpha stays under `WASH_ALPHA_MAX` and never casts a shadow.
 
-## Ambient motion
+## The hard shadow
 
-- **Motion is seeded too** (offsets, periods, phase, direction come from `generateArtwork`, never
-  `Math.random()` in the component). `artwork.test.ts` pins amplitudes and periods.
-- **`OVERHANG` is sized against the motion bounds.** The limiting case is rotation: a tilt about the
-  canvas centre swings mark ends inward. Re-check `OVERHANG` against tilt + sway + per-mark rotation
-  + the hover pose whenever an amplitude grows.
-- **Loops are opt-in under `prefers-reduced-motion: no-preference`.** tds-shared's clamp under
-  `reduce` is built for entrances; a loop outside the opt-in runs once and freezes on its last
-  keyframe. Every ambient keyframe has `0% == 100% ==` the static composition.
-- **The tilt is an SVG attribute on a group inside the animated sway group.** A CSS transform
-  animation on the tilt group would override the attribute and drop the tilt silently.
-- **Every mark is three nested elements:** `.auth-art__pose` (hover transition) around
-  `.auth-art__m--*` (ambient animation) around the drawn node (never moves). An animation beats any
-  other declaration of the same property, so pose and motion can't share an element; the filter
-  stays on the motionless child so its raster is cached. Measured flat 60 fps at 1×–6× CPU throttling;
-  `will-change` is deliberately absent (it would promote layers under a `screen` blend for no gain).
-  Not measured: weak GPUs and Firefox.
-- **Seeded values reach CSS as inline custom properties** read by shared `@keyframes`, one rule per
-  motion kind. A mistyped name silently invalidates the declaration; `static-posture.test.ts`
-  cross-checks names both ways, and every `var()` has an identity fallback.
-- **`spin` pivots on the arc's circle centre** (`--auth-ox/oy`), not `transform-box: fill-box`. It
-  reuses `auth-art-orbit`'s keyframes.
+`Mark.shade` (user units, `SHADE_RANGE` ≈ the cards' 6–8 px) renders a dark copy of the shape
+(`--auth-shade`, set on the stage) **behind a static `translate` attribute OUTSIDE its motion
+group**, with the same motion values inside. Inside the motion group a turning tile would swing its
+shadow round to the top-left. Only solid shapes (alpha ≥ 0.8) cast one.
+
+The face's motion group gets `.auth-art__raise` and `--auth-sh`; its CSS `translate` (not
+`transform`, which the same group animates) lifts it half an offset on hover (`--auth-lift`) and
+presses it into the shadow while typing (`--auth-energy`) — the buttons' lift-and-press.
+
+## Motion
+
+- **Seeded** (offsets, periods, phases, directions); `artwork.test.ts` pins amplitudes and periods.
+  Kinds: `drift`, `orbit`, `spin`, `turn` (±90° with long holds), `pulse`, `slide`.
+- **Signals** are a separate `pathLength="1"` overlay with one short dash; invisible at both ends of
+  the loop, so the static composition shows none.
+- **Entrance** (`Mark.enter`): `pop` (scale + opacity on `.auth-art__in`), `draw` (stroke dash on
+  `pathLength="1"` paths), `fade` (spanning fills), `none` (wash). One-shot, `both` fill, capped at
+  `ENTER_MAX`.
+- **Loops and entrances are opt-in under `prefers-reduced-motion: no-preference`.** tds-shared's clamp
+  under `reduce` freezes a loop on its last keyframe; every loop has `0% == 100% ==` the static
+  composition.
+- **Every mark is nested:** `.auth-art__pose` (hover transition) → `.auth-art__in--*` (entrance) →
+  `.auth-art__m--*` (ambient animation) → the drawn node (never moves). An animation beats any other
+  declaration of the same property, so none of these can share an element.
+- **The tilt is an SVG attribute on a group inside the animated sway group.** Orthogonal scenes tilt
+  ≤ 10–12°, the rest ≤ 18°.
+- **`spin` and `turn` pivot on `--auth-ox/oy`**, not `transform-box: fill-box`.
+- Seeded values reach CSS as inline custom properties; `static-posture.test.ts` cross-checks names
+  both ways, and every `var()` has an identity fallback.
+- Measured 61 fps across all scenes (desktop Chrome, raster with ~50 marks); `will-change` stays absent.
 
 ## Interaction: hover and typing, never the cursor position
 
 Both are inert under `reduce`.
 
-- **No coordinate anywhere.** Tracking the pointer turned the picture into a cursor read-out.
-  `static-posture.test.ts` fails on `clientX`, `getBoundingClientRect`, `requestAnimationFrame`, any
-  `onPointer*` handler, and the `--auth-glow` / `__follow` selectors.
-- **Hover → a seeded pose.** Each `.auth-art__pose` glides to a target offset/rotation/scale while the
-  pointer is over the panel. One direction per composition. The sign and the travel band are assigned
-  by layer (`structure` moves against the others; `POSE_BANDS` are disjoint: wash least, accents most).
-  That separation is the depth cue.
-- A CSS `transition` is right here because the value changes twice per visit.
-- **Stagger is capped** (`POSE_DELAY_MAX`, 220 ms); the delay also applies on the way back.
-- **A wash mark's pose never rotates** (rotation could pull an overhang into view).
-- **Hover rules sit inside `@media (hover: hover) and (pointer: fine)`**; a tap latches `:hover` on
-  touch screens.
-- **Hover firms up the structure, never the wash.** Structure thickens (`--auth-w` holds its resting
-  width so the rule scales by a factor) and brightens; accents **scale**, because their opacity is
-  driven by `auth-art-pulse` and an animation beats a transition.
-- **Each mark's alpha is a presentation attribute** (`stroke-opacity` / `fill-opacity`), not an inline
-  `opacity` (inline styles beat author CSS). `auth-art-pulse` rests at exactly 1 and multiplies.
-- **Typing → energy + a burst.** Each keystroke sets `--auth-energy` to 1 (decaying ~900 ms after the
-  last) and fires one expanding ripple from a pool of three seeded origins, via Web Animations
-  (`Element.animate`, optional-called; jsdom has none).
-- **Reduced motion is gated in JS too:** the component reads
-  `matchMedia("(prefers-reduced-motion: no-preference)")` live and doesn't subscribe to typing.
+- **No coordinate anywhere.** `static-posture.test.ts` fails on `clientX`, `getBoundingClientRect`,
+  `requestAnimationFrame`, any `onPointer*` handler.
+- **Hover → a seeded pose** per layer (`POSE_BANDS` disjoint: wash least, accents most; structure
+  moves against the others; wash and spanning marks never rotate; stagger ≤ `POSE_DELAY_MAX`).
+  Hairlines (`--line`) thicken and brighten, accents scale, raised tiles lift.
+- **Hover rules sit inside `@media (hover: hover) and (pointer: fine)`**.
+- **Each mark's alpha is a presentation attribute**, and `auth-art-pulse` rests at 1 and multiplies.
+- **Typing → energy + a burst.** `--auth-energy` rises per keystroke (decays ~900 ms after the last):
+  the composition breathes, accents swell, raised tiles press in; plus one ripple from a pool of
+  three, via Web Animations (optional-called; jsdom has none).
+- **Reduced motion is gated in JS too** (`matchMedia` live, no typing subscription).
 
 ## The typing signal (`src/lib/artworkSignal.ts`)
 
-Form and artwork are separate React roots, so a `window` CustomEvent is the bus (as with tds-shared's
-toast host). Each field calls `signalTyping()` explicitly, so the artwork reacts only to what someone
-decided. **A new form must call it**; every island suite asserts its own emission. The event carries
-**no payload**, not even a length.
+Form and artwork are separate React roots, so a `window` CustomEvent is the bus. Each field calls
+`signalTyping()` explicitly. **A new form must call it.** The event carries **no payload**.
 
 ## Verify in a browser, across several reloads
 
 `npm run build && npx astro preview`, then drive it with `playwright-core` (`channel: "chrome"`):
 
-- read `data-scene` off the `<svg>` to be sure you saw all four scenes;
-- compare `getComputedStyle(...).transform` on `.auth-art__pose` at two different cursor positions
-  inside the panel (they must be identical);
-- check `document.getAnimations()` under `reducedMotion: "reduce"`.
+- read `data-scene` off the `<svg>` to be sure you saw all eight scenes, in both page themes;
+- compare `getComputedStyle(...).transform` on `.auth-art__pose` at two cursor positions inside the
+  panel (identical), and `translate` on `.auth-art__raise` hovered vs. while typing;
+- check `document.getAnimations()` under `reducedMotion: "reduce"` (none on the artwork).
