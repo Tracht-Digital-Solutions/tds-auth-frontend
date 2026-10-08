@@ -677,9 +677,8 @@
   translate: 2px 2px;
   box-shadow: 1px 1px 0 0 var(--tds-shadow-ink);
 }
-.field-boxed {
-  box-shadow: 3px 3px 0 0 var(--tds-shadow-ink);
-}
+/* No `.field-boxed` here: a field is pressed IN (tds-shared's
+   `--tds-shadow-inset`), never lifted by the outer offset the buttons take. */
 .cookie-notice {
   box-shadow: 6px 6px 0 0 var(--tds-shadow-ink);
 }
