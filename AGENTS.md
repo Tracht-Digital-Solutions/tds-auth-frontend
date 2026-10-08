@@ -23,7 +23,7 @@ npm run build                   # → dist/ (the deployed artefact)
 - Every auth call sends `credentials: "include"`; the shared cookie **is** the session.
 - Don't advertise which surfaces a login covers on the login page.
 - Buttons inside the form are `type="button"` unless they submit. Buttons carry `.btn` **and** a `.btn-*` variant.
-- Password reveal is hold-to-show only, and its release is watched on `window`.
+- The password eye is a toggle (`aria-pressed`), and every submit masks the password again.
 - Keep the noindex posture: robots meta, `Disallow: /`, no sitemap.
 - The artwork never reads the pointer's position; loops and interactions live inside the reduced-motion opt-in.
 - Tailwind via `@tailwindcss/postcss`; `@source` for tds-shared after the `@import`s; fonts as JS imports.

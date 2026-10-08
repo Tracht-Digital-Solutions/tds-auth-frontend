@@ -64,9 +64,13 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
-  // Momentary, never a toggle: the password is legible only for as long as the
-  // button is physically held down (see the reveal button below).
+  // A toggle: one press shows the password, the next hides it again. It is
+  // masked again on every submit, so a shown password never travels on into
+  // the next screen.
   const [revealed, setRevealed] = useState(false);
+  // Wrong credentials mark both fields invalid (the shared error bounce shakes
+  // them as the flag turns on); typing in either clears it.
+  const [rejected, setRejected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   // Feature detection has to happen after hydration: the server-rendered HTML
@@ -96,30 +100,6 @@ export default function LoginForm() {
   useEffect(() => {
     setCanUsePasskeys(passkeysSupported());
   }, []);
-
-  /**
-   * Release the reveal GLOBALLY, not just on the button.
-   *
-   * The press can end anywhere: the pointer may be dragged off the button
-   * before it is lifted, the browser may steal it (a touch turning into a
-   * scroll fires `pointercancel`), or the window may lose focus while the
-   * finger is still down. Every one of those leaves an `onPointerUp` on the
-   * button unfired — and the failure mode is a password sitting on screen in
-   * plain text, which is exactly what this control must never do. The listeners
-   * exist only while something is actually revealed.
-   */
-  useEffect(() => {
-    if (!revealed) return;
-    const conceal = () => setRevealed(false);
-    window.addEventListener("pointerup", conceal);
-    window.addEventListener("pointercancel", conceal);
-    window.addEventListener("blur", conceal);
-    return () => {
-      window.removeEventListener("pointerup", conceal);
-      window.removeEventListener("pointercancel", conceal);
-      window.removeEventListener("blur", conceal);
-    };
-  }, [revealed]);
 
   // On-mount SSO: already authenticated anywhere → forward immediately.
   useEffect(() => {
@@ -191,6 +171,8 @@ export default function LoginForm() {
   const submit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setRejected(false);
+    setRevealed(false);
     setBusy(true);
     try {
       const res = await login(email, password, remember);
@@ -205,6 +187,7 @@ export default function LoginForm() {
                 : "Anmeldung fehlgeschlagen. Bitte erneut versuchen.";
         reshape(() => {
           setError(message);
+          setRejected(res.status === 401);
           setBusy(false);
         });
         return;
@@ -234,7 +217,15 @@ export default function LoginForm() {
 
   return (
     <form className="auth-form tds-vt-item" style={SHAPE} onSubmit={submit}>
-      {error ? <p className="status-pill status-pill--danger auth-error">{error}</p> : null}
+      {/* `role="alert"` announces it — and is what tds-shared's error bounce
+          watches for: the message shakes as it appears, together with the
+          button that sent the form. It is cleared on every submit, so the same
+          message failing twice appears (and shakes) again. */}
+      {error ? (
+        <p className="status-pill status-pill--danger auth-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {/* Every text field announces its keystrokes so the artwork island can
           answer them — see `artworkSignal.ts` for why this is an explicit call
           and not a listener over there. The signal carries no payload; the
@@ -247,8 +238,10 @@ export default function LoginForm() {
           value={email}
           onChange={(ev) => {
             setEmail(ev.target.value);
+            setRejected(false);
             signalTyping();
           }}
+          aria-invalid={rejected || undefined}
           autoComplete="username"
           autoFocus
           required
@@ -267,36 +260,28 @@ export default function LoginForm() {
             value={password}
             onChange={(ev) => {
               setPassword(ev.target.value);
+              setRejected(false);
               signalTyping();
             }}
+            aria-invalid={rejected || undefined}
             autoComplete="current-password"
             required
           />
-          {/* Hold to read, release to mask — deliberately NOT a toggle, so an
-              unlocked password can never be left standing on screen.
-              `preventDefault` on pointerdown suppresses the focus that the
-              compatibility mousedown would move here, keeping the caret in the
-              field; the keyboard path (Enter/Space held) is handled separately
-              because it produces no pointer events at all. */}
+          {/* A toggle: press to show, press again to hide. `aria-pressed`
+              carries the state, so the name stays one stable "Passwort
+              anzeigen". `preventDefault` on pointerdown suppresses the focus
+              that the compatibility mousedown would move here, keeping the
+              caret in the field; the click still fires. Enter and Space reach
+              it as a native button click. */}
           <button
             className="auth-password__reveal"
             type="button"
-            aria-label="Passwort anzeigen, solange gedrückt gehalten wird"
-            title="Gedrückt halten, um das Passwort zu prüfen"
+            aria-label="Passwort anzeigen"
+            aria-pressed={revealed}
+            title={revealed ? "Passwort verbergen" : "Passwort anzeigen"}
             data-revealed={revealed ? "true" : "false"}
-            onPointerDown={(ev) => {
-              ev.preventDefault();
-              setRevealed(true);
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key !== "Enter" && ev.key !== " ") return;
-              ev.preventDefault(); // Space would scroll the page
-              if (!ev.repeat) setRevealed(true);
-            }}
-            onKeyUp={(ev) => {
-              if (ev.key === "Enter" || ev.key === " ") setRevealed(false);
-            }}
-            onBlur={() => setRevealed(false)}
+            onPointerDown={(ev) => ev.preventDefault()}
+            onClick={() => setRevealed((shown) => !shown)}
           >
             {revealed ? <EyeIcon /> : <EyeOffIcon />}
           </button>

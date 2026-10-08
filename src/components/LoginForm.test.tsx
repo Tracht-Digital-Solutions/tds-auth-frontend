@@ -331,16 +331,8 @@ describe("the artwork signal", () => {
   });
 });
 
-describe("hold-to-reveal on the password field", () => {
-  /**
-   * The whole point of this control is that it is MOMENTARY. Every test here
-   * asserts the same thing from a different direction: whatever ends the press
-   * — a release on the button, a release somewhere else after dragging off, a
-   * cancelled touch, the window losing focus, a key going up — must put the
-   * mask back. A miss in any of them leaves a plaintext password on screen,
-   * and nothing else in the app would report that.
-   */
-  const revealButton = () => screen.getByRole("button", { name: /Passwort anzeigen/ });
+describe("the password eye is a toggle", () => {
+  const revealButton = () => screen.getByRole("button", { name: "Passwort anzeigen" });
   const passwordType = () => (screen.getByLabelText("Passwort") as HTMLInputElement).type;
 
   async function renderWithPassword(value = "hunter2hunter2") {
@@ -348,93 +340,78 @@ describe("hold-to-reveal on the password field", () => {
     await userEvent.setup({ delay: null }).type(screen.getByLabelText("Passwort"), value);
   }
 
-  it("keeps the field masked until the button is held", async () => {
+  it("shows the password on one press and hides it on the next", async () => {
     await renderWithPassword();
-
+    const user = userEvent.setup({ delay: null });
     expect(passwordType()).toBe("password");
+    expect(revealButton().getAttribute("aria-pressed")).toBe("false");
 
-    fireEvent.pointerDown(revealButton());
-
+    await user.click(revealButton());
     expect(passwordType()).toBe("text");
+    expect(revealButton().getAttribute("aria-pressed")).toBe("true");
     // Revealing must not disturb what was typed.
     expect((screen.getByLabelText("Passwort") as HTMLInputElement).value).toBe("hunter2hunter2");
-  });
 
-  it("masks again when the button is released", async () => {
-    await renderWithPassword();
-    fireEvent.pointerDown(revealButton());
-
-    fireEvent.pointerUp(revealButton());
-
+    await user.click(revealButton());
     expect(passwordType()).toBe("password");
+    expect(revealButton().getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("masks again when the pointer is released away from the button", async () => {
-    // Press, drag off, release: the button's own pointerup never fires, which
-    // is why the release is watched on the window.
+  it("stays shown after the pointer is released", async () => {
+    // The old control was hold-to-show; a release must no longer re-mask.
     await renderWithPassword();
-    fireEvent.pointerDown(revealButton());
-
+    await userEvent.setup({ delay: null }).click(revealButton());
     fireEvent.pointerUp(window);
-
-    expect(passwordType()).toBe("password");
-  });
-
-  it("masks again when the press is cancelled (a touch that became a scroll)", async () => {
-    await renderWithPassword();
-    fireEvent.pointerDown(revealButton());
-
-    fireEvent.pointerCancel(window);
-
-    expect(passwordType()).toBe("password");
-  });
-
-  it("masks again when the window loses focus mid-press", async () => {
-    await renderWithPassword();
-    fireEvent.pointerDown(revealButton());
-
     fireEvent.blur(window);
+    expect(passwordType()).toBe("text");
+  });
 
+  it("toggles from the keyboard", async () => {
+    await renderWithPassword();
+    const user = userEvent.setup({ delay: null });
+    revealButton().focus();
+    await user.keyboard("{Enter}");
+    expect(passwordType()).toBe("text");
+    await user.keyboard(" ");
     expect(passwordType()).toBe("password");
   });
 
-  it.each([["Enter"], [" "]])("reveals while %s is held and masks on release", async (key) => {
-    await renderWithPassword();
-    const button = revealButton();
-
-    fireEvent.keyDown(button, { key });
+  it("masks the password again when the form is sent", async () => {
+    login.mockResolvedValue({ ok: false, status: 401 });
+    await renderForm();
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByLabelText("E-Mail"), "julian@tracht-digital.de");
+    await user.type(screen.getByLabelText("Passwort"), "hunter2hunter2");
+    await user.click(revealButton());
     expect(passwordType()).toBe("text");
 
-    fireEvent.keyUp(button, { key });
-    expect(passwordType()).toBe("password");
-  });
-
-  it("masks again when focus leaves the button while a key is held", async () => {
-    await renderWithPassword();
-    fireEvent.keyDown(revealButton(), { key: " " });
-
-    fireEvent.blur(revealButton());
-
-    expect(passwordType()).toBe("password");
-  });
-
-  it("is not a toggle: a plain click leaves the password masked", async () => {
-    await renderWithPassword();
-
-    await userEvent.setup({ delay: null }).click(revealButton());
-
+    await user.click(screen.getByRole("button", { name: "Anmelden" }));
     expect(passwordType()).toBe("password");
   });
 
   it("never submits the form", async () => {
-    // A bare <button> inside a <form> defaults to type="submit" — checking the
-    // password would fire a login attempt with it.
+    // A bare <button> inside a <form> defaults to type="submit".
     await renderWithPassword();
-
     await userEvent.setup({ delay: null }).click(revealButton());
-
     expect((revealButton() as HTMLButtonElement).type).toBe("button");
     expect(login).not.toHaveBeenCalled();
+  });
+});
+
+describe("a rejected sign-in", () => {
+  it("announces the error as an alert and marks both fields invalid until edited", async () => {
+    // `role="alert"` and `aria-invalid` are what tds-shared's error bounce
+    // watches: the message, the fields and the button shake as they turn on.
+    login.mockResolvedValue({ ok: false, status: 401 });
+    await renderForm();
+    await submitCredentials();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("E-Mail oder Passwort ist falsch.");
+    expect(screen.getByLabelText("E-Mail").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Passwort").getAttribute("aria-invalid")).toBe("true");
+
+    await userEvent.setup({ delay: null }).type(screen.getByLabelText("Passwort"), "x");
+    expect(screen.getByLabelText("E-Mail").getAttribute("aria-invalid")).toBeNull();
   });
 });
 

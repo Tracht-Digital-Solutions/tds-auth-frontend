@@ -17,22 +17,26 @@ slim band above the form.
 - **`.tds-brandbar--sm` sits under the wordmark**, spaced by `.auth-brand__bar` (margin only). It is
   the page's only ornament.
 
-## Hold-to-reveal password (`.auth-password__reveal` in `LoginForm.tsx`)
+## Password eye (`.auth-password__reveal` in `LoginForm.tsx`)
 
-The password is readable only **while the eye button is held**. It is momentary, not a toggle: this
-page is often opened on shared or projected screens, and a toggle can be forgotten.
+A **toggle** (2026-10-09, asked for; it replaced hold-to-reveal): one press shows the password, the
+next hides it. `aria-pressed` carries the state under one stable name, "Passwort anzeigen".
 
-- **The release is watched on `window`**, not the button. A press can end anywhere: dragged off,
-  `pointercancel` from a scroll, or window blur. Missing one leaves a plaintext password on screen.
-  Listeners are attached only while something is revealed.
-- **`preventDefault()` on `pointerdown`** keeps focus (and the caret) in the password field. The
-  keyboard path has its own `keydown` / `keyup` pair plus `onBlur`.
+- **Every submit masks it again**, so a shown password never carries on into the next attempt.
+- **`preventDefault()` on `pointerdown`** keeps focus (and the caret) in the password field; the
+  click still fires. Enter and Space reach it as a native button click.
 - **`type="button"`**, or checking the password would submit the form.
 - **Not `.btn`**: the primitive's 44 px min-height would burst the 40 px field. Geometry is local;
   the `pointer: coarse` block grows it to 44 × 44 alongside `.field-boxed`.
 
 ## Form controls
 
+- **Errors announce and shake.** The error pill is `role="alert"`; a 401 sets `aria-invalid` on both
+  fields until one is edited. tds-shared's `errorBounceScript` (inline in `Layout.astro`) shakes the
+  pill, the fields and the submit button as they turn on. The pill is cleared on every submit, so the
+  same message failing twice shakes again.
+- **Focused fields show no ring and no recoloured border**; the pressed-in well changes colour
+  (tds-shared ≥ 0.49.6).
 - **Inputs use `.field-boxed`**, not `.field` (the underline variant looked half-rendered next to a
   focus outline).
 - **The remember-me checkbox is `.auth-remember`** with an explicit `id` / `htmlFor` inside a `<div>`.

@@ -2,7 +2,11 @@
 // Font faces must be imported here (not via @import in global.css):
 // @tailwindcss/postcss inlines CSS @imports without rebasing their relative
 // url(./files/*.woff2) refs, so Vite never emits the fonts otherwise.
-import { pageTransitionOptIn, themeBootstrapScript } from "@tracht-digital-solutions/tds-shared/astro";
+import {
+  errorBounceScript,
+  pageTransitionOptIn,
+  themeBootstrapScript,
+} from "@tracht-digital-solutions/tds-shared/astro";
 import "@fontsource/lato/400.css";
 import "@fontsource/lato/700.css";
 import "@fontsource/lato/900.css";
@@ -77,6 +81,8 @@ const { title, description = site.description, variant = "login" } = Astro.props
         `set:html`, and the value is a raw function body: an Astro inline script
         must never be wrapped in a template literal (it ships the backticks). */}
     <script is:inline set:html={themeBootstrapScript} />
+    {/* Errors shake: a refused field, an alert appearing, the button that sent it (tds-shared). */}
+    <script is:inline set:html={errorBounceScript} />
 
     <link rel="preconnect" href="https://api.tracht-digital.de" crossorigin />
     <meta name="generator" content={Astro.generator} />

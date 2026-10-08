@@ -95,7 +95,11 @@ export default function PasswordChangeForm() {
 
   return (
     <form className="auth-form" onSubmit={submit}>
-      {error ? <p className="status-pill status-pill--danger auth-error">{error}</p> : null}
+      {error ? (
+        <p className="status-pill status-pill--danger auth-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {/* Same artwork signal as the login form — see `artworkSignal.ts`. A form
           that forgets it leaves the composition inert with nothing logged, so
           this suite asserts the emission. */}

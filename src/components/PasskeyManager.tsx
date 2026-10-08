@@ -125,7 +125,10 @@ export default function PasskeyManager() {
   return (
     <div className="auth-form">
       {status ? (
-        <p className={`status-pill status-pill--${status.tone === "ok" ? "success" : "danger"} auth-error`}>
+        <p
+          className={`status-pill status-pill--${status.tone === "ok" ? "success" : "danger"} auth-error`}
+          role={status.tone === "ok" ? "status" : "alert"}
+        >
           {status.text}
         </p>
       ) : null}
