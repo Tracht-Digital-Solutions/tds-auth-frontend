@@ -1,0 +1,125 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><!-- The cross-page transition switch, as early as it can be: Chrome decides the
+         incoming page's opt-in at its first render, and the stylesheet linked at the
+         end of this head often arrives later (tds-shared pageTransitionOptIn). --><style>@view-transition{navigation:auto;types:page}@media (prefers-reduced-motion:reduce){@view-transition{navigation:none}}</style><meta name="description" content="Verbindet diese Site mit der API."><meta name="theme-color" content="#050f68"><meta name="robots" content="noindex,nofollow"><link rel="icon" type="image/png" href="/favicon.png" sizes="any"><script>document.documentElement.classList.add("js");</script><script>(function () {
+  /* The cross-site preference cookie (tds-shared/prefs), parsed once and
+     published as window.__tdsPrefs for the other pre-paint scripts of a site
+     (reader zoom, sidebar state) — so none of them re-implements the parse. */
+  var prefs = {};
+  try {
+    var m = document.cookie.match(/(?:^|;\s*)tds_prefs=([^;]*)/);
+    if (m) prefs = JSON.parse(decodeURIComponent(m[1])) || {};
+  } catch (e) { prefs = {}; }
+  window.__tdsPrefs = prefs;
+  function apply(root) {
+    try {
+      var saved = localStorage.getItem("tds-theme");
+      if (saved === "light" || saved === "dark") {
+        root.setAttribute("data-theme", saved);
+        return;
+      }
+    } catch (e) { /* storage disabled — fall through to the cookie / OS */ }
+    if (prefs.theme === "light" || prefs.theme === "dark") {
+      root.setAttribute("data-theme", prefs.theme);
+      return;
+    }
+    var dark = window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", dark ? "dark" : "light");
+  }
+  apply(document.documentElement);
+  document.addEventListener("astro:before-swap", function (event) {
+    apply(event.newDocument.documentElement);
+  });
+})();</script><script>(function () {
+  if (window.__tdsBounce) return;
+  var KF = [{"translate":"0px 0px"},{"translate":"-7px 0px","offset":0.16},{"translate":"6px 0px","offset":0.36},{"translate":"-4px 0px","offset":0.56},{"translate":"2px 0px","offset":0.76},{"translate":"0px 0px"}];
+  var OPT = {"duration":420,"easing":"ease-out","composite":"add"};
+  var ERR = '[role="alert"], .form-alert, .tds-toast--error, .tds-alert--danger, [data-error]';
+  function still() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+  function bounce(el) {
+    if (!el || !el.animate || still()) return;
+    if (el.closest && el.closest("[inert], .tds-theme-preview")) return;
+    var running = el.getAnimations ? el.getAnimations() : [];
+    for (var i = 0; i < running.length; i++) if (running[i].id === "tds-bounce") running[i].cancel();
+    try { el.animate(KF, OPT).id = "tds-bounce"; } catch (e) { /* no Web Animations */ }
+  }
+  window.__tdsBounce = bounce;
+
+  var last = null, lastAt = 0;
+  function remember(el) { if (el) { last = el; lastAt = Date.now(); } }
+  function blame() {
+    if (last && last.isConnected && Date.now() - lastAt < 4000) bounce(last);
+    last = null;
+  }
+  document.addEventListener("submit", function (e) { remember(e.submitter); }, true);
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    remember(t && t.closest ? t.closest('button, [role="button"], input[type="submit"], input[type="button"]') : null);
+  }, true);
+  document.addEventListener("invalid", function (e) { bounce(e.target); blame(); }, true);
+
+  var live = document.readyState !== "loading";
+  if (!live) document.addEventListener("DOMContentLoaded", function () { live = true; });
+  document.addEventListener("astro:before-swap", function () { live = false; });
+  document.addEventListener("astro:after-swap", function () {
+    requestAnimationFrame(function () { live = true; });
+  });
+
+  function errorIn(node) {
+    if (node.nodeType !== 1) return null;
+    if (node.matches(ERR)) return node;
+    return node.firstElementChild ? node.querySelector(ERR) : null;
+  }
+  new MutationObserver(function (records) {
+    if (!live) return;
+    var hits = [];
+    function add(el) {
+      if (!el || el.getAttribute("data-bounce") === "off" || hits.indexOf(el) >= 0) return;
+      if (!(el.textContent || "").trim() && !el.matches("[aria-invalid]")) return;
+      hits.push(el);
+    }
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (r.type === "attributes") {
+        if (r.target.getAttribute("aria-invalid") === "true" && r.oldValue !== "true") add(r.target);
+        continue;
+      }
+      var found = false;
+      for (var j = 0; j < r.addedNodes.length; j++) {
+        var n = r.addedNodes[j];
+        var err = errorIn(n);
+        if (err) { add(err); found = true; }
+        if (n.nodeType === 1 && n.matches('[aria-invalid="true"]')) { add(n); found = true; }
+      }
+      if (!found) {
+        var host = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+        var owner = host && host.closest ? host.closest(ERR) : null;
+        if (owner && (r.type === "characterData" || r.addedNodes.length)) add(owner);
+      }
+    }
+    if (!hits.length) return;
+    for (var k = 0; k < hits.length; k++) {
+      var nested = false;
+      for (var m = 0; m < hits.length; m++) if (m !== k && hits[m].contains(hits[k])) nested = true;
+      if (!nested) bounce(hits[k]);
+    }
+    blame();
+  }).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["aria-invalid"],
+    attributeOldValue: true,
+  });
+})();</script><link rel="preconnect" href="https://api.tracht-digital.de" crossorigin><meta name="generator" content="Astro v7.3.8"><title>Einrichtung — Zentrale Anmeldung</title><link rel="stylesheet" href="/_astro/Layout.CB6c_N5u.css"><script type="module" src="/_astro/page.B3sWyS9n.js"></script></head><body><main class="tds-shell auth-plain" data-surface="panel"><style>astro-island,astro-slot,astro-static-slot{display:contents}</style><script>(function(){let e=async e=>{await(await e())()};(self.Astro||(self.Astro={})).load=e,window.dispatchEvent(new Event(`astro:load`))})();</script><script>(function(){function e(t){"@babel/helpers - typeof";return e=typeof Symbol==`function`&&typeof Symbol.iterator==`symbol`?function(e){return typeof e}:function(e){return e&&typeof Symbol==`function`&&e.constructor===Symbol&&e!==Symbol.prototype?`symbol`:typeof e},e(t)}function t(t,n){if(e(t)!=`object`||!t)return t;var r=t[Symbol.toPrimitive];if(r!==void 0){var i=r.call(t,n||`default`);if(e(i)!=`object`)return i;throw TypeError(`@@toPrimitive must return a primitive value.`)}return(n===`string`?String:Number)(t)}function n(n){var r=t(n,`string`);return e(r)==`symbol`?r:r+``}function r(e,t,r){return(t=n(t))in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}let i=/* @__PURE__ */ new Set([`__proto__`,`constructor`,`prototype`]);{let e={0:e=>a(e),1:e=>n(e),2:e=>new RegExp(e),3:e=>new Date(e),4:e=>new Map(n(e)),5:e=>new Set(n(e)),6:e=>BigInt(e),7:e=>new URL(e),8:e=>new Uint8Array(e),9:e=>new Uint16Array(e),10:e=>new Uint32Array(e),11:e=>1/0*e},t=t=>{let[n,r]=t;return n in e?e[n](r):void 0},n=e=>e.map(t),a=e=>typeof e!=`object`||!e?e:Object.fromEntries(Object.entries(e).map(([e,n])=>[e,t(n)]));class o extends HTMLElement{constructor(...e){super(...e),r(this,`Component`,void 0),r(this,`hydrator`,void 0),r(this,`hydrate`,async()=>{var e;if(!this.hydrator||!this.isConnected)return;let t=(e=this.parentElement)==null?void 0:e.closest(`astro-island[ssr]`);if(t){t.addEventListener(`astro:hydrate`,this.hydrate,{once:!0});return}let n=this.querySelectorAll(`astro-slot`),r={},i=this.querySelectorAll(`template[data-astro-template]`);for(let e of i){let t=e.closest(this.tagName);t!=null&&t.isSameNode(this)&&(r[e.getAttribute(`data-astro-template`)||`default`]=e.innerHTML,e.remove())}for(let e of n){let t=e.closest(this.tagName);t!=null&&t.isSameNode(this)&&(r[e.getAttribute(`name`)||`default`]=e.innerHTML)}let o;try{o=this.hasAttribute(`props`)?a(JSON.parse(this.getAttribute(`props`))):{}}catch(e){let t=this.getAttribute(`component-url`)||`<unknown>`,n=this.getAttribute(`component-export`);throw n&&(t+=` (export ${n})`),console.error(`[hydrate] Error parsing props for component ${t}`,this.getAttribute(`props`),e),e}await this.hydrator(this)(this.Component,o,r,{client:this.getAttribute(`client`)}),this.removeAttribute(`ssr`),this.dispatchEvent(new CustomEvent(`astro:hydrate`))}),r(this,`unmount`,()=>{this.isConnected||this.dispatchEvent(new CustomEvent(`astro:unmount`))})}disconnectedCallback(){document.removeEventListener(`astro:after-swap`,this.unmount),document.addEventListener(`astro:after-swap`,this.unmount,{once:!0})}connectedCallback(){if(!this.hasAttribute(`await-children`)||document.readyState===`interactive`||document.readyState===`complete`)this.childrenConnectedCallback();else{let e=()=>{document.removeEventListener(`DOMContentLoaded`,e),t.disconnect(),this.childrenConnectedCallback()},t=new MutationObserver(()=>{var t;((t=this.lastChild)==null?void 0:t.nodeType)===Node.COMMENT_NODE&&this.lastChild.nodeValue===`astro:end`&&(this.lastChild.remove(),e())});t.observe(this,{childList:!0}),document.addEventListener(`DOMContentLoaded`,e)}}async childrenConnectedCallback(){let e=this.getAttribute(`before-hydration-url`);e&&await import(e),this.start()}getRetryImportUrl(e){let t=new URL(e,document.baseURI);return t.searchParams.set(`astro-retry`,Date.now().toString()),t.toString()}async importWithRetry(e){try{return await import(e)}catch(t){return await new Promise(e=>setTimeout(e,1e3)),import(this.getRetryImportUrl(e))}}handleHydrationError(e){let t=this.getAttribute(`component-url`),n=new CustomEvent(`astro:hydration-error`,{cancelable:!0,bubbles:!0,composed:!0,detail:{error:e,componentUrl:t}});this.dispatchEvent(n)&&console.error(`[astro-island] Error hydrating ${t}`,e)}async start(){let e=JSON.parse(this.getAttribute(`opts`)),t=this.getAttribute(`client`);if(Astro[t]===void 0){window.addEventListener(`astro:${t}`,()=>this.start(),{once:!0});return}try{await Astro[t](async()=>{let e=this.getAttribute(`renderer-url`);try{let[t,{default:n}]=await Promise.all([this.importWithRetry(this.getAttribute(`component-url`)),e?this.importWithRetry(e):Promise.resolve({default:()=>()=>{}})]),r=this.getAttribute(`component-export`)||`default`;if(r.includes(`.`)){this.Component=t;for(let e of r.split(`.`)){if(i.has(e)||!this.Component||typeof this.Component!=`object`&&typeof this.Component!=`function`||!Object.hasOwn(this.Component,e))throw Error(`Invalid component export path: ${r}`);this.Component=this.Component[e]}}else{if(i.has(r))throw Error(`Invalid component export path: ${r}`);this.Component=t[r]}return this.hydrator=n,this.hydrate}catch(e){return this.handleHydrationError(e),()=>{}}},e,this)}catch(e){this.handleHydrationError(e)}}attributeChangedCallback(){this.hydrate()}}r(o,`observedAttributes`,[`props`]),customElements.get(`astro-island`)||customElements.define(`astro-island`,o)}})();</script><astro-island uid="2gw0I2" prefix="r3" component-url="/_astro/index.cI1lVq03.js" component-export="InstallWizard" renderer-url="/_astro/client.KF1t-_eb.js" props="{&quot;profile&quot;:[0,{&quot;id&quot;:[0,&quot;auth&quot;],&quot;name&quot;:[0,&quot;Zentrale Anmeldung&quot;],&quot;origins&quot;:[1,[[0,&quot;https://auth.tracht-digital.de&quot;]]],&quot;publicRoutes&quot;:[1,[[0,{&quot;method&quot;:[0,&quot;GET&quot;],&quot;path&quot;:[0,&quot;/.well-known/jwks.json&quot;],&quot;countKey&quot;:[0,&quot;keys&quot;]}]]],&quot;probeBase&quot;:[0,&quot;auth&quot;],&quot;runtimeKeys&quot;:[1,[[0,&quot;apiBase&quot;],[0,&quot;authBase&quot;]]],&quot;pairing&quot;:[0,false]}]}" ssr client="load" opts="{&quot;name&quot;:&quot;InstallWizard&quot;,&quot;value&quot;:true}" await-children><div class="tds-page tds-stack"><div class="tds-stack tds-stack--tight"><h1 class="tds-page__title">Einrichtung — <!-- -->Zentrale Anmeldung</h1><p class="tds-page__lede">Verbindet diese ausgelieferte Site mit der API. Die Prüfungen laufen in diesem Browser und damit auf genau dem Weg, den die Site selbst nimmt.</p></div><section class="tds-card tds-stack p-5"><h2>1. Endpunkte</h2><div class="tds-field-row"><label for="apiBase">API-Basis-URL (das Gateway)</label><input id="apiBase" class="field field-boxed" value="https://api.tracht-digital.de"/></div><div class="tds-field-row"><label for="authBase">Auth-API-URL</label><input id="authBase" class="field field-boxed" value="https://api.tracht-digital.de/auth"/></div><p class="muted-line">Aktuelle Konfiguration wird gelesen …</p></section><section class="tds-card tds-stack p-5"><h2>2. Verbindung prüfen</h2><div class="tds-row"><button type="button" class="btn btn-primary">Prüfen</button></div></section><section class="tds-card tds-stack p-5"><h2>3. Konfiguration erzeugen</h2><p>Diese Datei gehört als <code>tds-runtime.json</code> in den Docroot, neben die <code>index.html</code>. Ein erneuter Deploy überschreibt sie nicht.</p><pre class="field-boxed p-3 overflow-x-auto text-sm">{
+  &quot;version&quot;: 1,
+  &quot;site&quot;: &quot;auth&quot;,
+  &quot;mode&quot;: &quot;direct&quot;,
+  &quot;generatedAt&quot;: &quot;2026-10-09T14:36:43.583Z&quot;,
+  &quot;apiBase&quot;: &quot;https://api.tracht-digital.de&quot;,
+  &quot;authBase&quot;: &quot;https://api.tracht-digital.de/auth&quot;
+}
+</pre><div class="tds-row"><button type="button" class="btn btn-primary">Herunterladen</button><button type="button" class="btn btn-ghost">JSON kopieren</button></div></section><section class="tds-card tds-stack p-5"><h2>4. Bestätigen</h2><p>Nach dem Ablegen hier prüfen, ob die Datei wirklich ausgeliefert wird. Ohne diesen Schritt bleibt eine fehlende Konfiguration unsichtbar: die Site fällt still auf ihre gebackenen Werte zurück.</p><div class="tds-row"><button type="button" class="btn btn-primary">Prüfen, ob die Datei liegt</button></div></section><section class="tds-card tds-stack p-5"><h2>5. Site-Key hinterlegen</h2><p>Der Key wird im Admin-Portal unter <em>Einstellungen → Site-Verbindungen</em> <!-- -->erzeugt und dort nur einmal angezeigt. Er meldet diese Site bei der API an, damit im Portal sichtbar ist, dass sie verbunden ist.</p><div class="tds-field-row"><label for="siteKey">Site-Key</label><input id="siteKey" class="field field-boxed" autoComplete="off" spellCheck="false" placeholder="tdsk_…" value=""/></div><div class="tds-row"><button type="button" class="btn btn-primary" disabled="">Verbindung herstellen</button></div><p class="muted-line">Der Key gehört <strong>nicht</strong> in die <code>tds-runtime.json</code> — die Datei ist öffentlich lesbar. Für die Inhalte zur Bauzeit gehört er als<!-- --> <code>TDS_SITE_KEY</code> in die Secrets des Repositorys.</p></section></div><!--astro:end--></astro-island></main><nav class="auth-legal" aria-label="Rechtliches"><a href="https://tracht-digital.de/legal/impressum">Impressum</a><a href="https://tracht-digital.de/legal/datenschutz">Datenschutz</a><script>(function(){let e=(e,t)=>{let n=async()=>{await(await e())()},r=typeof t.value==`object`?t.value:void 0,i={timeout:r==null?void 0:r.timeout};`requestIdleCallback`in window?window.requestIdleCallback(n,i):setTimeout(n,i.timeout||200)};(self.Astro||(self.Astro={})).idle=e,window.dispatchEvent(new Event(`astro:idle`))})();</script><astro-island uid="1BTlKP" prefix="r4" component-url="/_astro/index.Dla-JMtt.js" component-export="ConsentLink" renderer-url="/_astro/client.KF1t-_eb.js" props="{&quot;lang&quot;:[0,&quot;de&quot;]}" ssr client="idle" opts="{&quot;name&quot;:&quot;ConsentLink&quot;,&quot;value&quot;:true}" await-children><button type="button" class="consent-link">Cookie-Einstellungen</button><!--astro:end--></astro-island></nav><script type="module" src="/_astro/Layout.astro_astro_type_script_index_0_lang.CAmzH3ae.js"></script><astro-island uid="Z8rkTw" prefix="r5" component-url="/_astro/index.Dla-JMtt.js" component-export="ConsentBanner" renderer-url="/_astro/client.KF1t-_eb.js" props="{&quot;lang&quot;:[0,&quot;de&quot;],&quot;variant&quot;:[0,&quot;panel&quot;],&quot;categories&quot;:[1,[[0,&quot;analytics&quot;]]],&quot;privacyUrl&quot;:[0,&quot;https://tracht-digital.de/legal/datenschutz&quot;],&quot;imprintUrl&quot;:[0,&quot;https://tracht-digital.de/legal/impressum&quot;]}" ssr client="idle" opts="{&quot;name&quot;:&quot;ConsentBanner&quot;,&quot;value&quot;:true}"></astro-island></body></html>
