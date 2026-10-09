@@ -148,18 +148,26 @@ const { title, description = site.description, variant = "login" } = Astro.props
     {/*
       `variant="panel"` is the wording, not a different mechanism: this surface
       DOES set a cookie — the session one, on login — and saying "no cookies"
-      here would be false. No `categories`, because there is nothing optional
-      to decide about; the banner states the fact and offers one
-      acknowledgement.
+      here would be false. One category, `analytics` (the platform's own
+      statistics); the session cookie is necessary and not a question.
 
       `lang` and `privacyUrl` are passed explicitly. They were not, so the
       notice took its defaults, and the privacy link went to a hard-coded
       absolute URL that nothing here could see or check.
     */}
+    {/* Besucher-Statistik: page views and whether the login form was started
+        or sent — field names only, never an address or a password. Nothing
+        before the visitor agrees to "Statistik". */}
+    <script>
+      import { startAnalytics } from "@tracht-digital-solutions/tds-shared/analytics";
+
+      startAnalytics({ site: "auth", lang: "de" });
+    </script>
     <ConsentBanner
       client:idle
       lang="de"
       variant="panel"
+      categories={["analytics"]}
       privacyUrl={legalLinks.datenschutz}
       imprintUrl={legalLinks.impressum}
     />

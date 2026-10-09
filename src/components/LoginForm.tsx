@@ -216,7 +216,7 @@ export default function LoginForm() {
   }
 
   return (
-    <form className="auth-form tds-vt-item" style={SHAPE} onSubmit={submit}>
+    <form className="auth-form tds-vt-item" style={SHAPE} onSubmit={submit} data-track-form="login">
       {/* `role="alert"` announces it — and is what tds-shared's error bounce
           watches for: the message shakes as it appears, together with the
           button that sent the form. It is cleared on every submit, so the same
