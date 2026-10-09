@@ -1,0 +1,1 @@
+var e=`tds-ad-consent`,t=`tds-ad-consent`;function n(){if(typeof window>`u`)return null;try{let t=window.localStorage.getItem(e);return t===`granted`||t===`denied`?t:null}catch{return null}}function r(n){if(typeof window<`u`){try{window.localStorage.setItem(e,n)}catch{}try{window.dispatchEvent(new CustomEvent(t,{detail:n}))}catch{}}}export{r as i,e as n,n as r,t};
