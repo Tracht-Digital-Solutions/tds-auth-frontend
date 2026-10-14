@@ -1,5 +1,6 @@
 {
   "name": "tds-auth-frontend",
+  "license": "UNLICENSED",
   "version": "0.21.0",
   "private": true,
   "type": "module",
