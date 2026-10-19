@@ -1,3 +1,5 @@
+import { LEGAL_LINKS } from "@tracht-digital-solutions/tds-shared/nav";
+
 /** Site-wide metadata for the central login. */
 export const site = {
   name: "Tracht Digital Solutions",
@@ -20,6 +22,6 @@ export const site = {
  * and it does not create a second text to keep in step with the first.
  */
 export const legalLinks = {
-  impressum: "https://tracht-digital.de/legal/impressum",
-  datenschutz: "https://tracht-digital.de/legal/datenschutz",
+  impressum: LEGAL_LINKS.imprint,
+  datenschutz: LEGAL_LINKS.privacy,
 } as const;

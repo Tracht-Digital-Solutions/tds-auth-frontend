@@ -1,7 +1,7 @@
 {
   "name": "tds-auth-frontend",
   "license": "UNLICENSED",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@fontsource/lato": "^5.2.7",
     "@tailwindcss/postcss": "^4.3.3",
-    "@tracht-digital-solutions/tds-shared": "^0.55.1",
+    "@tracht-digital-solutions/tds-shared": "^0.59.3",
     "astro": "^7.2.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
