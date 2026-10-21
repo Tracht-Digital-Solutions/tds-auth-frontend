@@ -129,3 +129,42 @@ export async function changePassword(oldPw: string, newPw: string): Promise<Pass
   }
   return { ok: res.ok, status: res.status, error };
 }
+
+/**
+ * POST /password-reset — body {email, lang}. The API answers 202 for every
+ * well-formed address, known or not, so the result never says whether an
+ * account exists; only 400 (malformed) and 429 (rate limit) are distinguishable.
+ */
+export async function requestPasswordReset(email: string, lang: "de" | "en" = "de"): Promise<PasswordResult> {
+  const res = await fetch(`${await authBase()}/password-reset`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, lang }),
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+/**
+ * POST /password-reset/confirm — body {token, new}. 204 on success; the API
+ * issues no session, the user signs in with the new password. 400 means the
+ * link is unknown, used or expired; 422 a password the rules reject.
+ */
+export async function confirmPasswordReset(token: string, newPw: string): Promise<PasswordResult> {
+  const res = await fetch(`${await authBase()}/password-reset/confirm`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new: newPw }),
+  });
+  let error: string | undefined;
+  if (!res.ok) {
+    try {
+      const data = (await res.json()) as { error?: string };
+      error = data.error;
+    } catch {
+      /* ignore */
+    }
+  }
+  return { ok: res.ok, status: res.status, error };
+}

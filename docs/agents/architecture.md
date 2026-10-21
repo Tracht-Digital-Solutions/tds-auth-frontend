@@ -6,6 +6,7 @@
 |---|---|
 | `/` | Login (`LoginForm` island) |
 | `/passwort` | Password change (forced or voluntary) |
+| `/passwort-vergessen` | Forgotten password: request a link, or (with `?token=`) set a new password |
 | `/passkeys` | Passkey management |
 | `/install` | Shared host setup wizard (see [deployment.md](deployment.md)) |
 
@@ -38,6 +39,10 @@ Anything else falls back to a role-based default (`isAdmin` → `management.`, e
   body fields are `{old, new}`.
 - **"30 Tage angemeldet bleiben"** sends `remember: true`. It doesn't lengthen the token; the API
   issues a rotating remember-me cookie that panels trade at `POST /refresh` (see `tds-auth-api`).
+- **Forgotten password** (`/passwort-vergessen`, linked from the login): `POST /password-reset` answers
+  202 for any address, so the page shows ONE neutral sentence whether an account exists or not — never
+  branch on it. The mailed link carries `?token=`; `POST /password-reset/confirm` returns 204 and issues
+  no session, so the page sends the user to the login. 400 = used/expired link → offer a new one.
 
 ## Passkeys (`src/lib/passkeys.ts`)
 

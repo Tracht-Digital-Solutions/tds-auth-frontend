@@ -1,0 +1,13 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import PasswordResetForm from "~/components/PasswordResetForm.tsx";
+---
+
+<Layout title="Passwort vergessen — Tracht Digital Solutions">
+  <h1>Passwort vergessen</h1>
+  <p class="auth-card__lede">
+    Nach Eingabe der E-Mail-Adresse kommt ein Link, mit dem sich ein neues Passwort
+    (mindestens 12 Zeichen) festlegen lässt.
+  </p>
+  <PasswordResetForm client:load />
+</Layout>

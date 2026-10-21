@@ -612,6 +612,15 @@
   accent-color: var(--color-primary);
   cursor: pointer;
 }
+/* Same row as the checkbox, pushed to the far edge: it belongs to the
+   password field above, not to the form's flow. */
+.auth-forgot {
+  margin-left: auto;
+  padding: 0.25rem 0;
+  font-size: 0.8125rem;
+  color: var(--color-primary);
+  text-underline-offset: 0.2em;
+}
 .auth-remember label {
   font-size: 0.8125rem;
   font-weight: 400;

@@ -298,6 +298,9 @@ export default function LoginForm() {
           onChange={(ev) => setRemember(ev.target.checked)}
         />
         <label htmlFor="remember-me">30 Tage angemeldet bleiben</label>
+        <a className="auth-forgot" href="/passwort-vergessen">
+          Passwort vergessen?
+        </a>
       </div>
       <button className="btn btn-primary" type="submit" disabled={busy || passkeyBusy}>
         {busy ? <Spinner size="sm" /> : "Anmelden"}
