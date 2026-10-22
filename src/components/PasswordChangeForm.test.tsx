@@ -164,6 +164,9 @@ describe("client-side validation", () => {
 
     expect(await screen.findByText("Die Passwörter stimmen nicht überein.")).toBeDefined();
     expect(changePassword).not.toHaveBeenCalled();
+    // The red frame goes on the field the message is about, and only there.
+    expect(screen.getByLabelText("Neues Passwort bestätigen").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Neues Passwort").getAttribute("aria-invalid")).toBeNull();
   });
 
   it("rejects reusing the current password", async () => {

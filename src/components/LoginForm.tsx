@@ -6,6 +6,7 @@ import { fetchMe, login } from "~/lib/auth";
 import { signalTyping } from "~/lib/artworkSignal";
 import { loginWithPasskey, passkeysSupported } from "~/lib/passkeys";
 import { resolveTarget } from "~/lib/redirect";
+import { ErrorPill, Field, useFormError } from "~/components/formError";
 
 /**
  * Lucide `eye` / `eye-off`, hand-inlined — this site pulls in no icon library,
@@ -62,15 +63,14 @@ const SHAPE = { "--tds-vt-name": "auth-login" } as CSSProperties;
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Wrong credentials mark both fields invalid (red frame; the shared error
+  // bounce shakes them as the flag turns on); typing in either clears it.
+  const { setError, edited, pill, invalid, tip } = useFormError();
   const [remember, setRemember] = useState(false);
   // A toggle: one press shows the password, the next hides it again. It is
   // masked again on every submit, so a shown password never travels on into
   // the next screen.
   const [revealed, setRevealed] = useState(false);
-  // Wrong credentials mark both fields invalid (the shared error bounce shakes
-  // them as the flag turns on); typing in either clears it.
-  const [rejected, setRejected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   // Feature detection has to happen after hydration: the server-rendered HTML
@@ -171,7 +171,6 @@ export default function LoginForm() {
   const submit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-    setRejected(false);
     setRevealed(false);
     setBusy(true);
     try {
@@ -186,8 +185,7 @@ export default function LoginForm() {
                 ? "Zu viele Versuche. Bitte später erneut versuchen."
                 : "Anmeldung fehlgeschlagen. Bitte erneut versuchen.";
         reshape(() => {
-          setError(message);
-          setRejected(res.status === 401);
+          setError(message, res.status === 401 ? ["email", "password"] : []);
           setBusy(false);
         });
         return;
@@ -221,72 +219,72 @@ export default function LoginForm() {
           watches for: the message shakes as it appears, together with the
           button that sent the form. It is cleared on every submit, so the same
           message failing twice appears (and shakes) again. */}
-      {error ? (
-        <p className="status-pill status-pill--danger auth-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <ErrorPill message={pill} />
       {/* Every text field announces its keystrokes so the artwork island can
           answer them — see `artworkSignal.ts` for why this is an explicit call
           and not a listener over there. The signal carries no payload; the
           checkbox below deliberately does not send one. */}
-      <label>
-        E-Mail
-        <input
-          className="field-boxed"
-          type="email"
-          value={email}
-          onChange={(ev) => {
-            setEmail(ev.target.value);
-            setRejected(false);
-            signalTyping();
-          }}
-          aria-invalid={rejected || undefined}
-          autoComplete="username"
-          autoFocus
-          required
-        />
-      </label>
+      <Field tip={tip("email")}>
+        <label>
+          E-Mail
+          <input
+            className="field-boxed"
+            type="email"
+            value={email}
+            onChange={(ev) => {
+              setEmail(ev.target.value);
+              edited("email");
+              signalTyping();
+            }}
+            aria-invalid={invalid("email")}
+            autoComplete="username"
+            autoFocus
+            required
+          />
+        </label>
+      </Field>
       {/* The reveal button lives INSIDE the label, which is safe: label
           activation is skipped when the click target is interactive content,
           so pressing the eye does not also re-focus the input. The input stays
           the label's control because it is the first labelable descendant. */}
-      <label>
-        Passwort
-        <span className="auth-password">
-          <input
-            className="field-boxed auth-password__input"
-            type={revealed ? "text" : "password"}
-            value={password}
-            onChange={(ev) => {
-              setPassword(ev.target.value);
-              setRejected(false);
-              signalTyping();
-            }}
-            aria-invalid={rejected || undefined}
-            autoComplete="current-password"
-            required
-          />
-          {/* A toggle: press to show, press again to hide. `aria-pressed`
-              carries the state, so the name stays one stable "Passwort
-              anzeigen". `preventDefault` on pointerdown suppresses the focus
-              that the compatibility mousedown would move here, keeping the
-              caret in the field; the click still fires. Enter and Space reach
-              it as a native button click. */}
-          <button
-            className="auth-password__reveal"
-            type="button"
-            aria-label="Passwort anzeigen"
-            aria-pressed={revealed}
-            title={revealed ? "Passwort verbergen" : "Passwort anzeigen"}
-            data-revealed={revealed ? "true" : "false"}
-            onPointerDown={(ev) => ev.preventDefault()}
-            onClick={() => setRevealed((shown) => !shown)}
-          >
-            {revealed ? <EyeIcon /> : <EyeOffIcon />}
-          </button>
-        </span>
-      </label>
+      <Field tip={tip("password")}>
+        <label>
+          Passwort
+          <span className="auth-password">
+            <input
+              className="field-boxed auth-password__input"
+              type={revealed ? "text" : "password"}
+              value={password}
+              onChange={(ev) => {
+                setPassword(ev.target.value);
+                edited("password");
+                signalTyping();
+              }}
+              aria-invalid={invalid("password")}
+              autoComplete="current-password"
+              required
+            />
+            {/* A toggle: press to show, press again to hide. `aria-pressed`
+                carries the state, so the name stays one stable "Passwort
+                anzeigen". `preventDefault` on pointerdown suppresses the focus
+                that the compatibility mousedown would move here, keeping the
+                caret in the field; the click still fires. Enter and Space reach
+                it as a native button click. */}
+            <button
+              className="auth-password__reveal"
+              type="button"
+              aria-label="Passwort anzeigen"
+              aria-pressed={revealed}
+              title={revealed ? "Passwort verbergen" : "Passwort anzeigen"}
+              data-revealed={revealed ? "true" : "false"}
+              onPointerDown={(ev) => ev.preventDefault()}
+              onClick={() => setRevealed((shown) => !shown)}
+            >
+              {revealed ? <EyeIcon /> : <EyeOffIcon />}
+            </button>
+          </span>
+        </label>
+      </Field>
       {/* Explicit id/htmlFor rather than a wrapping <label>: the wrapper would
           be a direct child of `.auth-form` and inherit the stacked, 600-weight
           field-label treatment, which is what made this read as a third input. */}

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { stubLocation, type StubbedLocation } from "~/test-support/location";
 import { TYPING_EVENT } from "~/lib/artworkSignal";
+import { stubMatchMedia } from "~/test-support/matchMedia";
 
 /**
  * Behaviour tests for the central login island.
@@ -412,6 +413,36 @@ describe("a rejected sign-in", () => {
 
     await userEvent.setup({ delay: null }).type(screen.getByLabelText("Passwort"), "x");
     expect(screen.getByLabelText("E-Mail").getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("shows wrong credentials as a tip beside the e-mail field on the split layout", async () => {
+    const media = stubMatchMedia(true);
+    try {
+      login.mockResolvedValue({ ok: false, status: 401 });
+      await renderForm();
+      await submitCredentials();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.className).toContain("auth-field__tip");
+      expect(alert.closest(".auth-field")?.querySelector("input")).toBe(screen.getByLabelText("E-Mail"));
+      expect(document.querySelector(".status-pill")).toBeNull();
+    } finally {
+      media.restore();
+    }
+  });
+
+  it("keeps an error that is about no field in the pill on the split layout", async () => {
+    const media = stubMatchMedia(true);
+    try {
+      login.mockResolvedValue({ ok: false, status: 429 });
+      await renderForm();
+      await submitCredentials();
+
+      expect((await screen.findByRole("alert")).className).toContain("status-pill");
+      expect(screen.getByLabelText("E-Mail").getAttribute("aria-invalid")).toBeNull();
+    } finally {
+      media.restore();
+    }
   });
 });
 

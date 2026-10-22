@@ -31,10 +31,19 @@ next hides it. `aria-pressed` carries the state under one stable name, "Passwort
 
 ## Form controls
 
-- **Errors announce and shake.** The error pill is `role="alert"`; a 401 sets `aria-invalid` on both
-  fields until one is edited. tds-shared's `errorBounceScript` (inline in `Layout.astro`) shakes the
-  pill, the fields and the submit button as they turn on. The pill is cleared on every submit, so the
-  same message failing twice shakes again.
+- **Errors announce and shake.** Every form routes its error through `useFormError()`
+  (`src/components/formError.tsx`). An error about fields (wrong credentials, wrong current
+  password, too short, mismatch, invalid address) sets `aria-invalid` on those fields: a red ring in
+  every layout, kept while focused. On the split layout (≥ 62rem, `SPLIT_QUERY`) the message is a tip
+  beside the first of those fields; narrower it is the pill above the form. Errors without a field
+  (429, 403, network) are always the pill. Exactly one element carries the message, always
+  `role="alert"`. Editing a named field clears the error. tds-shared's `errorBounceScript` (inline in
+  `Layout.astro`) shakes the message, the fields and the submit button as they turn on; the error is
+  cleared on every submit, so the same message failing twice shakes again.
+- **The tip is a sibling of the label** (`.auth-field > label` + `.auth-field__tip`), never inside it:
+  label content becomes the input's accessible name. It is positioned with `transform`, because the
+  bounce animates `translate`. `.auth-panel` takes `z-index: 1` on the split layout, or the artwork
+  (later in the DOM, `.tds-wash` isolates the panel) paints over the tip.
 - **Focused fields show no ring and no recoloured border**; the pressed-in well changes colour
   (tds-shared ≥ 0.49.6).
 - **Inputs use `.field-boxed`**, not `.field` (the underline variant looked half-rendered next to a

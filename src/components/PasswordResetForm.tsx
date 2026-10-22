@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Spinner } from "@tracht-digital-solutions/tds-shared/components";
 import { confirmPasswordReset, requestPasswordReset } from "~/lib/auth";
 import { signalTyping } from "~/lib/artworkSignal";
+import { ErrorPill, Field, useFormError } from "~/components/formError";
 
 const MIN_LEN = 12;
 
@@ -21,7 +22,7 @@ export default function PasswordResetForm() {
 
 function RequestLink() {
   const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const { setError, edited, pill, invalid, tip } = useFormError();
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -34,13 +35,13 @@ function RequestLink() {
       if (res.ok) {
         setSent(true);
       } else {
-        setError(
-          res.status === 429
-            ? "Zu viele Anfragen. Bitte später erneut versuchen."
-            : res.status === 400
-              ? "Bitte eine gültige E-Mail-Adresse eingeben."
+        if (res.status === 400) setError("Bitte eine gültige E-Mail-Adresse eingeben.", ["email"]);
+        else
+          setError(
+            res.status === 429
+              ? "Zu viele Anfragen. Bitte später erneut versuchen."
               : "Anfrage fehlgeschlagen. Bitte erneut versuchen.",
-        );
+          );
       }
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
@@ -63,26 +64,26 @@ function RequestLink() {
 
   return (
     <form className="auth-form" onSubmit={submit}>
-      {error ? (
-        <p className="status-pill status-pill--danger auth-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <label>
-        E-Mail
-        <input
-          className="field-boxed"
-          type="email"
-          value={email}
-          onChange={(ev) => {
-            setEmail(ev.target.value);
-            signalTyping();
-          }}
-          autoComplete="email"
-          autoFocus
-          required
-        />
-      </label>
+      <ErrorPill message={pill} />
+      <Field tip={tip("email")}>
+        <label>
+          E-Mail
+          <input
+            className="field-boxed"
+            type="email"
+            value={email}
+            onChange={(ev) => {
+              setEmail(ev.target.value);
+              edited("email");
+              signalTyping();
+            }}
+            aria-invalid={invalid("email")}
+            autoComplete="email"
+            autoFocus
+            required
+          />
+        </label>
+      </Field>
       <button className="btn btn-primary" type="submit" disabled={busy}>
         {busy ? <Spinner size="sm" /> : "Link anfordern"}
       </button>
@@ -96,7 +97,7 @@ function RequestLink() {
 function SetPassword({ token }: { token: string }) {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const { setError, edited, pill, invalid, tip } = useFormError();
   const [expired, setExpired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -105,11 +106,11 @@ function SetPassword({ token }: { token: string }) {
     e.preventDefault();
     setError(null);
     if (newPw.length < MIN_LEN) {
-      setError(`Das neue Passwort muss mindestens ${MIN_LEN} Zeichen lang sein.`);
+      setError(`Das neue Passwort muss mindestens ${MIN_LEN} Zeichen lang sein.`, ["new"]);
       return;
     }
     if (newPw !== confirmPw) {
-      setError("Die Passwörter stimmen nicht überein.");
+      setError("Die Passwörter stimmen nicht überein.", ["confirm"]);
       return;
     }
     setBusy(true);
@@ -120,13 +121,13 @@ function SetPassword({ token }: { token: string }) {
       } else if (res.status === 400) {
         setExpired(true);
       } else {
-        setError(
-          res.status === 422
-            ? (res.error ?? "Das neue Passwort ist ungültig.")
-            : res.status === 429
+        if (res.status === 422) setError(res.error ?? "Das neue Passwort ist ungültig.", ["new"]);
+        else
+          setError(
+            res.status === 429
               ? "Zu viele Versuche. Bitte später erneut versuchen."
               : "Änderung fehlgeschlagen. Bitte erneut versuchen.",
-        );
+          );
       }
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
@@ -162,42 +163,46 @@ function SetPassword({ token }: { token: string }) {
 
   return (
     <form className="auth-form" onSubmit={submit}>
-      {error ? (
-        <p className="status-pill status-pill--danger auth-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <label>
-        Neues Passwort
-        <input
-          className="field-boxed"
-          type="password"
-          value={newPw}
-          onChange={(ev) => {
-            setNewPw(ev.target.value);
-            signalTyping();
-          }}
-          autoComplete="new-password"
-          minLength={MIN_LEN}
-          autoFocus
-          required
-        />
-      </label>
-      <label>
-        Neues Passwort bestätigen
-        <input
-          className="field-boxed"
-          type="password"
-          value={confirmPw}
-          onChange={(ev) => {
-            setConfirmPw(ev.target.value);
-            signalTyping();
-          }}
-          autoComplete="new-password"
-          minLength={MIN_LEN}
-          required
-        />
-      </label>
+      <ErrorPill message={pill} />
+      <Field tip={tip("new")}>
+        <label>
+          Neues Passwort
+          <input
+            className="field-boxed"
+            type="password"
+            value={newPw}
+            onChange={(ev) => {
+              setNewPw(ev.target.value);
+              edited("new");
+              signalTyping();
+            }}
+            aria-invalid={invalid("new")}
+            autoComplete="new-password"
+            minLength={MIN_LEN}
+            autoFocus
+            required
+          />
+        </label>
+      </Field>
+      <Field tip={tip("confirm")}>
+        <label>
+          Neues Passwort bestätigen
+          <input
+            className="field-boxed"
+            type="password"
+            value={confirmPw}
+            onChange={(ev) => {
+              setConfirmPw(ev.target.value);
+              edited("confirm");
+              signalTyping();
+            }}
+            aria-invalid={invalid("confirm")}
+            autoComplete="new-password"
+            minLength={MIN_LEN}
+            required
+          />
+        </label>
+      </Field>
       <button className="btn btn-primary" type="submit" disabled={busy}>
         {busy ? <Spinner size="sm" /> : "Passwort speichern"}
       </button>
