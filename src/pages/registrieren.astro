@@ -1,0 +1,13 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import RegisterForm from "~/components/RegisterForm.tsx";
+---
+
+<Layout title="Konto anlegen — Tracht Digital Solutions">
+  <h1>Konto anlegen</h1>
+  <p class="auth-card__lede">
+    Ein Konto für Premium-Werkzeuge und alles Weitere. Nach dem Absenden kommt eine E-Mail mit einem
+    Bestätigungslink.
+  </p>
+  <RegisterForm client:load />
+</Layout>

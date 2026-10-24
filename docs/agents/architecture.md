@@ -7,6 +7,7 @@
 | `/` | Login (`LoginForm` island) |
 | `/passwort` | Password change (forced or voluntary) |
 | `/passwort-vergessen` | Forgotten password: request a link, or (with `?token=`) set a new password |
+| `/registrieren` | Self-registration: name, address, password; with `?token=` it confirms the address on load |
 | `/passkeys` | Passkey management |
 | `/install` | Shared host setup wizard (see [deployment.md](deployment.md)) |
 
@@ -46,6 +47,11 @@ Anything else falls back to a role-based default (`isAdmin` → `management.`, e
 
 ## Passkeys (`src/lib/passkeys.ts`)
 
+- **Registration** (`/registrieren`, linked from the login as „Konto anlegen“, carrying `?next=`): `POST /register`
+  answers 202 for every acceptable request, so the page shows ONE sentence whether or not the address has an
+  account. An allowed `next` waits in `localStorage` (`tds-register-next`) for the mailed link and goes through
+  `safeNext` again on read. With `?token=` the page posts `/register/confirm` on load; no session is issued, the
+  visitor signs in afterwards (`/?next=…`).
 - Sign-in is **usernameless**: no `allowCredentials`, so the authenticator offers its discoverable
   credentials for `tracht-digital.de`. There is no email field and no way to probe whether an
   address has a passkey.

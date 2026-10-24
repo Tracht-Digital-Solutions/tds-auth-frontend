@@ -862,3 +862,20 @@
     translate: none;
   }
 }
+
+/* ---- Registration: the privacy note and the sign-up line under the login ---- */
+.auth-note,
+.auth-signup {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+.auth-signup {
+  text-align: center;
+}
+.auth-note a,
+.auth-signup a {
+  color: var(--color-primary);
+  text-underline-offset: 0.2em;
+}

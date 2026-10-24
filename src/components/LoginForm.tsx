@@ -91,6 +91,13 @@ export default function LoginForm() {
   const rawNext = (): string | null =>
     typeof location !== "undefined" ? new URLSearchParams(location.search).get("next") : null;
 
+  const [signupHref, setSignupHref] = useState("/registrieren");
+  useEffect(() => {
+    const next = rawNext();
+    if (next) setSignupHref(`/registrieren?next=${encodeURIComponent(next)}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const goToPasswordChange = () => {
     const next = rawNext();
     const q = next ? `?next=${encodeURIComponent(next)}` : "";
@@ -319,6 +326,12 @@ export default function LoginForm() {
           </button>
         </>
       ) : null}
+      {/* Carries ?next= along, so a visitor from the tools site lands back on
+          the premium page after confirming. Set after mount: the page is
+          static, the query only exists in the browser. */}
+      <p className="auth-signup">
+        Noch kein Konto? <a href={signupHref}>Konto anlegen</a>
+      </p>
     </form>
   );
 }

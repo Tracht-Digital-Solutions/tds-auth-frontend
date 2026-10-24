@@ -168,3 +168,33 @@ export async function confirmPasswordReset(token: string, newPw: string): Promis
   }
   return { ok: res.ok, status: res.status, error };
 }
+
+/**
+ * POST /register — body {name, email, password, lang}. 202 for every
+ * acceptable request (the API never says whether the address has an
+ * account); 400 a missing name or bad address, 422 a short password, 404 when
+ * self-registration is switched off.
+ */
+export async function register(name: string, email: string, password: string, lang: "de" | "en" = "de"): Promise<PasswordResult> {
+  const res = await fetch(`${await authBase()}/register`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password, lang }),
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+/**
+ * POST /register/confirm — body {token}. 204 activates the account; no
+ * session is issued. 400 means the link is unknown, used or expired.
+ */
+export async function confirmRegistration(token: string): Promise<PasswordResult> {
+  const res = await fetch(`${await authBase()}/register/confirm`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  return { ok: res.ok, status: res.status };
+}
