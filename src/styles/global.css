@@ -879,3 +879,36 @@
   color: var(--color-primary);
   text-underline-offset: 0.2em;
 }
+
+/* Consent settings: the three decisions on one row (2026-11-11). This page
+   sets no `data-surface`, so tds-shared's base dialog let "Auswahl speichern"
+   wrap onto a second line below the panel's edge. Same layout as the
+   marketing surface (primitives.css, `[data-surface="marketing"]
+   .consent-dialog__actions`), without its pill shape; stacked, the
+   considered action first, where the panel is narrow. */
+.consent-dialog {
+  width: min(100% - 2rem, 38rem);
+}
+.consent-dialog__panel {
+  container-type: inline-size;
+  max-width: none;
+}
+.consent-dialog__actions {
+  flex-wrap: nowrap;
+}
+.consent-dialog__actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 0.875rem;
+  white-space: nowrap;
+}
+@container (max-width: 27rem) {
+  .consent-dialog__actions {
+    flex-direction: column-reverse;
+  }
+  .consent-dialog__actions .btn {
+    flex: none;
+    width: 100%;
+  }
+}
